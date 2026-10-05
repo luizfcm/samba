@@ -1,0 +1,38 @@
+# Arquitetura do software
+
+## Componentes atuais
+
+O código Dart está organizado em duas áreas:
+
+- `nucleo`: modelo `AmostraForca`, contrato `FonteForca`, fonte simulada e decodificador `PacoteMedicao`.
+- `funcionalidades/medicao/dominio`: cálculo de `MetricasForca` e interface `ProcessadorExercicio`, ainda sem implementações específicas por exercício.
+
+A fonte simulada e o decodificador produzem o mesmo modelo de amostra. O cálculo das métricas recebe uma lista de amostras; não há conexão automática entre esses componentes ou com a interface.
+
+```text
+FonteForcaSimulada → Stream<AmostraForca>
+PacoteMedicao.decodificar → AmostraForca
+List<AmostraForca> → calcularMetricasForca → MetricasForca
+```
+
+## Aquisição simulada
+
+`FonteForca` expõe `amostras`, `iniciar()` e `parar()`. A implementação simulada usa um Stream broadcast, sem retenção de amostras para assinantes posteriores.
+
+A primeira amostra tem sequência e timestamp zero. O temporizador solicita novas amostras a cada 10 ms, correspondendo à frequência nominal de 100 Hz. A sequência aumenta uma unidade por emissão. A força descreve um sinal triangular de 0 a 100 N a cada 100 amostras; `status` é zero.
+
+Os timestamps são relativos ao início da aquisição e medidos por `Stopwatch`. Atrasos no agendamento podem alterar os intervalos e a frequência efetiva, mas não os valores de força associados à sequência.
+
+Chamadas de início durante uma aquisição ativa não criam outro temporizador. A parada cancela o temporizador sem fechar o Stream. Uma nova aquisição reinicia a sequência, o relógio e o sinal.
+
+## Limites atuais
+
+A interface exibe apenas “SAMBA” e “Interface em desenvolvimento”, sem controles ou navegação. Não há aquisição por hardware, comunicação BLE real, firmware executável, armazenamento local ou sincronização. O processamento implementado calcula apenas as métricas gerais da curva força-tempo.
+
+## Arquitetura prevista
+
+```text
+H3C3 → condicionamento/ADC → ESP32-S3 → BLE → aplicativo Flutter → processamento → persistência
+```
+
+Esse fluxo representa a arquitetura prevista, ainda não implementada integralmente. A aquisição pelo H3C3 e pelo ADC, o firmware do ESP32-S3, a comunicação BLE real e a persistência ainda não estão implementados; o aplicativo dispõe atualmente da fonte simulada e das métricas gerais de força.
