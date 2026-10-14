@@ -5,15 +5,16 @@
 O código Dart está organizado em três áreas:
 
 - `nucleo`: modelo `AmostraForca`, contrato `FonteForca`, fonte simulada e decodificador `PacoteMedicao`.
-- `funcionalidades/medicao/dominio`: `Exercicio`, `SessaoMedicao`, cálculo de `MetricasForca` e interface `ProcessadorExercicio`, ainda sem implementações específicas por exercício.
+- `funcionalidades/medicao/dominio`: `Exercicio`, `SessaoMedicao`, cálculo de `MetricasForca`, interface `ProcessadorExercicio` e sua implementação `ProcessadorIsometria`.
 - `funcionalidades/medicao/aplicacao`: `ControladorMedicao`, que liga uma `FonteForca` a uma `SessaoMedicao`.
 
-A fonte simulada e o decodificador produzem o mesmo modelo de amostra. O cálculo das métricas recebe uma lista de amostras; ainda não há conexão com o controlador nem com a interface.
+A fonte simulada e o decodificador produzem o mesmo modelo de amostra. O cálculo das métricas e o processador de isometria recebem uma lista de amostras; ainda não há conexão com o controlador nem com a interface.
 
 ```text
 FonteForca → ControladorMedicao → SessaoMedicao
 PacoteMedicao.decodificar → AmostraForca
 List<AmostraForca> → calcularMetricasForca → MetricasForca
+List<AmostraForca> → ProcessadorIsometria → ResultadoIsometria
 ```
 
 ## Controle da medição
@@ -36,7 +37,7 @@ Chamadas de início durante uma aquisição ativa não criam outro temporizador.
 
 ## Limites atuais
 
-A interface exibe apenas “SAMBA” e “Interface em desenvolvimento”, sem controles ou navegação. Não há aquisição por hardware, comunicação BLE real, firmware executável, armazenamento local ou sincronização. O processamento implementado calcula apenas as métricas gerais da curva força-tempo.
+A interface exibe apenas “SAMBA” e “Interface em desenvolvimento”, sem controles ou navegação. Não há aquisição por hardware, comunicação BLE real, firmware executável, armazenamento local ou sincronização. O processamento implementado calcula as métricas gerais da curva força-tempo e, na isometria, o instante do pico; não há processamento específico para salto ou terra.
 
 ## Arquitetura prevista
 
