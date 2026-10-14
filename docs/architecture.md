@@ -2,18 +2,27 @@
 
 ## Componentes atuais
 
-O código Dart está organizado em duas áreas:
+O código Dart está organizado em três áreas:
 
 - `nucleo`: modelo `AmostraForca`, contrato `FonteForca`, fonte simulada e decodificador `PacoteMedicao`.
-- `funcionalidades/medicao/dominio`: cálculo de `MetricasForca` e interface `ProcessadorExercicio`, ainda sem implementações específicas por exercício.
+- `funcionalidades/medicao/dominio`: `Exercicio`, `SessaoMedicao`, cálculo de `MetricasForca` e interface `ProcessadorExercicio`, ainda sem implementações específicas por exercício.
+- `funcionalidades/medicao/aplicacao`: `ControladorMedicao`, que liga uma `FonteForca` a uma `SessaoMedicao`.
 
-A fonte simulada e o decodificador produzem o mesmo modelo de amostra. O cálculo das métricas recebe uma lista de amostras; não há conexão automática entre esses componentes ou com a interface.
+A fonte simulada e o decodificador produzem o mesmo modelo de amostra. O cálculo das métricas recebe uma lista de amostras; ainda não há conexão com o controlador nem com a interface.
 
 ```text
-FonteForcaSimulada → Stream<AmostraForca>
+FonteForca → ControladorMedicao → SessaoMedicao
 PacoteMedicao.decodificar → AmostraForca
 List<AmostraForca> → calcularMetricasForca → MetricasForca
 ```
+
+## Controle da medição
+
+`ControladorMedicao` é um `ChangeNotifier` com os estados `ociosa`, `medindo` e `finalizada`, e notifica somente nas mudanças de estado. `iniciar` cria uma nova sessão, zera as contagens, assina o Stream e inicia a fonte; chamá-lo durante uma medição lança `StateError`. Se a fonte falhar ao iniciar, o controlador volta a `ociosa` sem sessão.
+
+A sequência de cada amostra é comparada à última sequência recebida, e o timestamp ao último timestamp aceito. Amostras cuja sequência ou timestamp não seja maior são descartadas e contadas em `amostrasDescartadas`. Saltos de sequência somam as amostras ausentes em `amostrasPerdidas`, tomando a primeira amostra recebida como referência. Uma amostra descartada só pelo timestamp avança a referência de sequência e, por isso, não conta como perdida.
+
+`finalizar` cancela a assinatura, aguarda a parada da fonte e só então finaliza a sessão e passa a `finalizada`, mesmo que a parada falhe. Amostras recebidas durante a parada são ignoradas.
 
 ## Aquisição simulada
 

@@ -19,7 +19,7 @@ Os nomes da tabela identificam os campos binários. No modelo Dart, `sequence` c
 
 O timestamp representa o instante de aquisição no relógio da fonte, em microssegundos; não é uma data de calendário. A força é expressa em milinewtons no pacote e em newtons no aplicativo, preservando valores negativos.
 
-O decodificador rejeita tamanhos diferentes de 20 bytes e versões diferentes de 1 com `FormatException`. O campo `flags` não é interpretado. `status` é preservado como inteiro, sem definição de bits no código atual. A sequência é preservada, mas não há detecção de perdas implementada.
+O decodificador rejeita tamanhos diferentes de 20 bytes e versões diferentes de 1 com `FormatException`. O campo `flags` não é interpretado. `status` é preservado como inteiro, sem definição de bits no código atual. A sequência é preservada pelo decodificador; a detecção de perdas e de amostras fora de ordem é feita pelo `ControladorMedicao`.
 
 ## Transporte e controle
 
