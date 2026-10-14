@@ -20,6 +20,17 @@ impulso = (forcaN[i−1] + forcaN[i]) × Δt / 2
 
 O resultado soma as contribuições de todos os intervalos. Forças e impulsos negativos são preservados. A força média não é ponderada pelo tempo; intervalos irregulares afetam a integração, mas não o peso de cada amostra na média.
 
+## Isometria
+
+`ProcessadorIsometria` implementa `ProcessadorExercicio<ResultadoIsometria>` para remada e extensora. Ele calcula as métricas com `calcularMetricasForca` e retorna `ResultadoIsometria`:
+
+| Campo | Métrica | Unidade | Cálculo |
+|---|---|---|---|
+| `metricas` | Métricas de força | — | Resultado de `calcularMetricasForca`; o pico de força é `metricas.forcaMaximaN` |
+| `instantePicoS` | Instante do pico | s | Timestamp da primeira amostra com força igual ao pico, menos o timestamp da primeira amostra, dividido por 10⁶ |
+
+O instante é relativo à primeira amostra da lista, não ao relógio da fonte. Em empate no pico, vale o primeiro instante. O mapa de parâmetros não é usado. Os erros de validação de `calcularMetricasForca` são repassados sem alteração.
+
 ## Validação e limites
 
 São necessárias pelo menos duas amostras, com timestamps estritamente crescentes. Entradas menores, timestamps repetidos ou fora de ordem produzem `ArgumentError` antes do cálculo.
