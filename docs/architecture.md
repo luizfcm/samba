@@ -47,4 +47,6 @@ A interface exibe apenas “SAMBA” e “Interface em desenvolvimento”, sem c
 H3C3 → condicionamento/ADC → ESP32-S3 → BLE → aplicativo Flutter → processamento → persistência
 ```
 
+A comunicação entre o ESP32-S3 e o aplicativo segue o protocolo BLE v2, descrito em [protocolo_ble_v2.md](protocolo_ble_v2.md), com pacotes de 20 amostras a 1000 Hz.
+
 Esse fluxo representa a arquitetura prevista, ainda não implementada integralmente. A aquisição pelo H3C3 e pelo ADC, o firmware do ESP32-S3, a comunicação BLE real e a persistência ainda não estão implementados; o aplicativo dispõe atualmente da fonte simulada e das métricas gerais de força.

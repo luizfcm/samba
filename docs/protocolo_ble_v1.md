@@ -1,6 +1,6 @@
 # Protocolo BLE — pacote de medição versão 1
 
-Este documento registra o formato do pacote de medição atualmente suportado por `PacoteMedicao.decodificar`: versão **1**, identificada pelo valor `1` no primeiro byte do pacote.
+Este documento registra o formato do pacote de medição atualmente suportado por `PacoteMedicao.decodificar`: versão **1**, identificada pelo valor `1` no primeiro byte do pacote. O dispositivo adota a versão 2, descrita em [protocolo_ble_v2.md](protocolo_ble_v2.md).
 
 ## Formato binário
 
