@@ -13,7 +13,7 @@ O desenvolvimento e a validação inicial do aplicativo estão concentrados em A
 ## Organização
 
 - `app/`: aplicativo Flutter e testes.
-- `docs/`: arquitetura, formato do pacote BLE e definição das métricas.
+- `docs/`: arquitetura, protocolos BLE e definição das métricas.
 - `firmware/`: registro do estado do firmware, ainda sem código executável.
 - `analysis/`: diretório de análise, ainda sem scripts ou notebooks.
 - `data/raw/` e `data/processed/`: diretórios de dados, atualmente sem amostras versionadas.
@@ -41,5 +41,6 @@ Os testes da fonte simulada usam temporizadores reais; a força é determinísti
 ## Documentação técnica
 
 - [Arquitetura](docs/architecture.md)
-- [Pacote BLE](docs/protocolo_ble_v1.md)
+- [Protocolo BLE v2](docs/protocolo_ble_v2.md), adotado pelo dispositivo
+- [Pacote BLE v1](docs/protocolo_ble_v1.md)
 - [Métricas de força](docs/metrics.md)
