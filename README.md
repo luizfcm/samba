@@ -1,22 +1,14 @@
 # SAMBA
 
-O Sistema de Avaliação de Movimento e Biomecânica Aplicada (SAMBA) é um projeto universitário de aquisição e análise de força. Este repositório reúne a base de software e a documentação técnica mantidas pela equipe.
-
-## Estado atual
-
-O aplicativo Flutter contém uma fonte simulada de força a 100 Hz, um modelo de amostra, um decodificador do pacote BLE v2 e o cálculo de força máxima, força média, duração e impulso. Esses componentes têm testes unitários.
-
-A interface contém apenas a identificação do SAMBA e um aviso de que está em desenvolvimento, sem conexão com a aquisição. Não há comunicação BLE real, firmware executável, processamento específico por exercício, persistência ou sincronização.
-
-O desenvolvimento e a validação inicial do aplicativo estão concentrados em Android.
+O Sistema de Avaliação de Movimento e Biomecânica Aplicada (SAMBA) é um projeto universitário de aquisição e análise de força, com célula de carga, ESP32-S3 e aplicativo Flutter para Android.
 
 ## Organização
 
 - `app/`: aplicativo Flutter e testes.
-- `docs/`: arquitetura, protocolo BLE v2 e definição das métricas.
-- `firmware/`: registro do estado do firmware, ainda sem código executável.
-- `analysis/`: diretório de análise, ainda sem scripts ou notebooks.
-- `data/raw/` e `data/processed/`: diretórios de dados, atualmente sem amostras versionadas.
+- `docs/`: arquitetura, protocolo BLE v2 e métricas.
+- `firmware/`: firmware do ESP32-S3.
+- `analysis/`: análises de sinais.
+- `data/raw/` e `data/processed/`: dados brutos e processados.
 
 ## Execução e validação
 
