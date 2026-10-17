@@ -6,6 +6,16 @@ Este documento especifica a versão **2** do protocolo entre o dispositivo SAMBA
 
 O firmware do ESP32-S3 lê o ADC ADS1220 a 1000 Hz. A calibração e a tara são feitas no firmware, que guarda o fator e o deslocamento de calibração em NVS. Fora do modo bruto, o pacote transporta a força já convertida em milinewtons.
 
+### Calibração
+
+A força é calculada a partir das contagens do ADC:
+
+```text
+força_mN = (contagens − deslocamento) × fator
+```
+
+O firmware arredonda o resultado para o inteiro mais próximo antes de enviá-lo em `force_mN`. O deslocamento é expresso em contagens do ADC e o fator em mN por contagem. SET_CALIBRACAO grava os dois valores; TARE grava as contagens atuais como novo deslocamento e mantém o fator.
+
 ## Formato binário
 
 Cada pacote reúne N amostras consecutivas: um cabeçalho de 16 bytes seguido de N blocos de 6 bytes, num total de `16 + 6 × N` bytes. Os campos multibyte usam little-endian.
@@ -42,7 +52,8 @@ O pacote leva 20 amostras: `16 + 6 × 20 = 136` bytes. Com os 3 bytes do cabeça
 | 2 | Sem calibração |
 | 3 | Erro no ADC |
 | 4 | Modo bruto: `force_mN` carrega contagens do ADC em vez de mN |
-| 5–15 | Reservados |
+| 5 | Aquisição em andamento: ligado após START, desligado após STOP |
+| 6–15 | Reservados |
 
 ## Serviço GATT
 
@@ -67,7 +78,9 @@ Os comandos são escritos na característica Controle. O primeiro byte é o opco
 | 0x04 | MODO_BRUTO | uint8: 1 liga, 0 desliga | 2 |
 | 0x05 | SET_CALIBRACAO | fator float32, deslocamento int32 | 9 |
 
-START inicia a aquisição e zera a sequência e o timestamp: a primeira amostra enviada depois dele tem sequência 0 e timestamp 0. STOP interrompe a aquisição. TARE inicia a tara no firmware, sinalizada pelo bit 1 de status enquanto estiver em andamento. MODO_BRUTO liga ou desliga o envio de contagens do ADC, sinalizado pelo bit 4. SET_CALIBRACAO grava o fator e o deslocamento de calibração.
+START inicia a aquisição e zera a sequência e o timestamp: a primeira amostra enviada depois dele tem sequência 0 e timestamp 0. STOP interrompe a aquisição. TARE inicia a tara no firmware, sinalizada pelo bit 1 de status enquanto estiver em andamento, e ao terminar grava as contagens atuais como deslocamento. MODO_BRUTO liga ou desliga o envio de contagens do ADC, sinalizado pelo bit 4. SET_CALIBRACAO grava o fator e o deslocamento de calibração.
+
+Os comandos não têm resposta direta. O efeito aparece na característica Estado, que notifica o aplicativo sempre que o status ou a calibração mudam. START e STOP também seguem essa regra: o efeito deles aparece no bit 5 de status, notificado pela característica Estado.
 
 ## Estado
 
@@ -81,7 +94,9 @@ A característica Estado tem 13 bytes em little-endian:
 | 5 | 4 | calibration_factor | float32 |
 | 9 | 4 | calibration_offset | int32 |
 
-`version` é a versão do protocolo, 2. `status` usa os mesmos bits do pacote de medição. `rate_hz` é a taxa de amostragem em hertz. `calibration_factor` e `calibration_offset` são os valores gravados por SET_CALIBRACAO.
+`version` é a versão do protocolo, 2. `status` usa os mesmos bits do pacote de medição. `rate_hz` é a taxa de amostragem em hertz. `calibration_factor` é o fator em mN por contagem e `calibration_offset` é o deslocamento em contagens, gravados por SET_CALIBRACAO; o deslocamento também é gravado por TARE.
+
+A característica notifica o aplicativo quando `status`, `calibration_factor` ou `calibration_offset` mudam, e pode ser lida a qualquer momento.
 
 ## Implementação no aplicativo
 
