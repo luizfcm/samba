@@ -4,15 +4,16 @@
 
 O código Dart está organizado em três áreas:
 
-- `nucleo`: modelo `AmostraForca`, contrato `FonteForca`, fonte simulada e decodificador `PacoteMedicao`.
+- `nucleo`: modelo `AmostraForca`, contrato `FonteForca`, fonte simulada e decodificadores `PacoteMedicao` (v1) e `PacoteMedicaoV2`.
 - `funcionalidades/medicao/dominio`: `Exercicio`, `SessaoMedicao`, cálculo de `MetricasForca`, detector de repetições `detectarRepeticoes`, interface `ProcessadorExercicio` e sua implementação `ProcessadorIsometria`.
 - `funcionalidades/medicao/aplicacao`: `ControladorMedicao`, que liga uma `FonteForca` a uma `SessaoMedicao`.
 
-A fonte simulada e o decodificador produzem o mesmo modelo de amostra. O cálculo das métricas e o processador de isometria recebem uma lista de amostras; ainda não há conexão com o controlador nem com a interface.
+A fonte simulada e os decodificadores produzem o mesmo modelo de amostra. O cálculo das métricas e o processador de isometria recebem uma lista de amostras; ainda não há conexão com o controlador nem com a interface.
 
 ```text
 FonteForca → ControladorMedicao → SessaoMedicao
 PacoteMedicao.decodificar → AmostraForca
+PacoteMedicaoV2.decodificar → List<AmostraForca>
 List<AmostraForca> → calcularMetricasForca → MetricasForca
 List<AmostraForca> → ProcessadorIsometria → ResultadoIsometria
 ```
