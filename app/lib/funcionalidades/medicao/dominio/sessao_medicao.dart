@@ -18,6 +18,19 @@ class SessaoMedicao {
   /// Cópia não modificável; não acompanha adições posteriores à sessão.
   List<AmostraForca> get amostras => List.unmodifiable(_amostras);
 
+  /// Cópia não modificável só do trecho a partir de [indice], para leitura
+  /// incremental; não percorre as amostras anteriores.
+  List<AmostraForca> amostrasDesde(int indice) {
+    RangeError.checkValueInInterval(
+      indice,
+      0,
+      _amostras.length,
+      'indice',
+      'Índice fora do intervalo das amostras.',
+    );
+    return List.unmodifiable(_amostras.getRange(indice, _amostras.length));
+  }
+
   /// Duração dos dados em segundos, independente dos instantes de calendário.
   /// Não há intervalo de aquisição definido com menos de duas amostras.
   double? get duracaoDadosS {

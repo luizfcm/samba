@@ -178,5 +178,71 @@ void main() {
       expect(sessao.amostras.clear, throwsUnsupportedError);
       expect(sessao.quantidadeAmostras, 1);
     });
+
+    test('lê apenas as amostras a partir do índice informado', () {
+      final primeira = criarAmostra(0, 1000000, 10);
+      final segunda = criarAmostra(1, 1500000, 20);
+      final terceira = criarAmostra(2, 2000000, 30);
+      sessao.adicionarAmostra(primeira);
+      sessao.adicionarAmostra(segunda);
+      sessao.adicionarAmostra(terceira);
+
+      expect(sessao.amostrasDesde(0), [primeira, segunda, terceira]);
+      expect(sessao.amostrasDesde(1), [segunda, terceira]);
+      expect(sessao.amostrasDesde(2), [terceira]);
+    });
+
+    test('devolve lista vazia quando o índice é a quantidade de amostras', () {
+      expect(sessao.amostrasDesde(0), isEmpty);
+
+      sessao.adicionarAmostra(criarAmostra(0, 1000000, 10));
+      sessao.adicionarAmostra(criarAmostra(1, 1500000, 20));
+
+      expect(sessao.amostrasDesde(sessao.quantidadeAmostras), isEmpty);
+    });
+
+    test('rejeita índice negativo ou maior que a quantidade de amostras', () {
+      sessao.adicionarAmostra(criarAmostra(0, 1000000, 10));
+      sessao.adicionarAmostra(criarAmostra(1, 1500000, 20));
+
+      expect(() => sessao.amostrasDesde(-1), throwsRangeError);
+      expect(() => sessao.amostrasDesde(3), throwsRangeError);
+      expect(
+        () => SessaoMedicao(
+          exercicio: Exercicio.remada,
+          inicio: inicio,
+        ).amostrasDesde(1),
+        throwsRangeError,
+      );
+    });
+
+    test('a leitura parcial não é modificável nem acompanha adições', () {
+      final primeira = criarAmostra(0, 1000000, 10);
+      final segunda = criarAmostra(1, 1500000, 20);
+      sessao.adicionarAmostra(primeira);
+      sessao.adicionarAmostra(segunda);
+      final recentes = sessao.amostrasDesde(1);
+
+      expect(() => recentes.add(primeira), throwsUnsupportedError);
+      expect(() => recentes.removeAt(0), throwsUnsupportedError);
+      expect(() => recentes[0] = primeira, throwsUnsupportedError);
+      expect(recentes.clear, throwsUnsupportedError);
+
+      sessao.adicionarAmostra(criarAmostra(2, 2000000, 30));
+      expect(recentes, [segunda]);
+      expect(sessao.amostras, hasLength(3));
+    });
+
+    test('permite a leitura parcial após a finalização', () {
+      final primeira = criarAmostra(0, 1000000, 10);
+      final segunda = criarAmostra(1, 1500000, 20);
+      sessao.adicionarAmostra(primeira);
+      sessao.adicionarAmostra(segunda);
+      sessao.finalizar(termino: termino);
+
+      expect(sessao.amostrasDesde(1), [segunda]);
+      expect(sessao.amostrasDesde(2), isEmpty);
+      expect(() => sessao.amostrasDesde(3), throwsRangeError);
+    });
   });
 }

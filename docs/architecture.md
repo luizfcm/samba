@@ -25,6 +25,8 @@ A sequência de cada amostra é comparada à última sequência recebida, e o ti
 
 `finalizar` cancela a assinatura, aguarda a parada da fonte e só então finaliza a sessão e passa a `finalizada`, mesmo que a parada falhe. Amostras recebidas durante a parada são ignoradas.
 
+Durante a medição, a interface deve ler as amostras de forma incremental com `SessaoMedicao.amostrasDesde`, guardando quantas já leu, em vez de copiar a lista inteira com `amostras` a cada atualização.
+
 ## Aquisição simulada
 
 `FonteForca` expõe `amostras`, `iniciar()` e `parar()`. A implementação simulada usa um Stream broadcast, sem retenção de amostras para assinantes posteriores.
