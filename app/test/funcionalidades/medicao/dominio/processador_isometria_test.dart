@@ -71,6 +71,65 @@ void main() {
       expect(resultado.instantePicoS, 0.2);
     });
 
+    test('calcula as métricas de cada uma de três repetições', () {
+      final forcas = <double>[
+        ...[0, 100, 100, 100, 100, 50],
+        ...[0, 0, 60, 80, 70, 30],
+        ...[0, 0, 40, 90, 90, 20],
+        ...[5, 0],
+      ];
+      final resultado = processar([
+        for (var indice = 0; indice < forcas.length; indice++)
+          amostra(5000000 + indice * 100000, forcas[indice]),
+      ]);
+
+      // Limiares de 20 N e 10 N sobre o pico de 100 N: os trechos são os
+      // índices 1 a 5, 8 a 11 e 14 a 17, em passos de 0,1 s.
+      expect(resultado.metricas.forcaMaximaN, 100);
+      expect(resultado.instantePicoS, 0.1);
+      expect(resultado.repeticoes, hasLength(3));
+      expect(resultado.repeticoes.clear, throwsUnsupportedError);
+
+      final [primeira, segunda, terceira] = resultado.repeticoes;
+      expect(primeira.inicioS, 0.1);
+      expect(primeira.duracaoS, 0.4);
+      expect(primeira.picoN, 100);
+      expect(primeira.instantePicoS, 0.1);
+      // 3 × (100 + 100) / 2 × 0,1 + (100 + 50) / 2 × 0,1.
+      expect(primeira.impulsoNs, closeTo(37.5, 1e-9));
+
+      expect(segunda.inicioS, 0.8);
+      expect(segunda.duracaoS, 0.3);
+      expect(segunda.picoN, 80);
+      expect(segunda.instantePicoS, 0.9);
+      // (60 + 80) / 2 × 0,1 + (80 + 70) / 2 × 0,1 + (70 + 30) / 2 × 0,1.
+      expect(segunda.impulsoNs, closeTo(19.5, 1e-9));
+
+      expect(terceira.inicioS, 1.4);
+      expect(terceira.duracaoS, 0.3);
+      expect(terceira.picoN, 90);
+      // Empate em 90 N: vale o primeiro instante.
+      expect(terceira.instantePicoS, 1.5);
+      // (40 + 90) / 2 × 0,1 + (90 + 90) / 2 × 0,1 + (90 + 20) / 2 × 0,1.
+      expect(terceira.impulsoNs, closeTo(21, 1e-9));
+
+      expect(resultado.mediaPicosN, 90);
+    });
+
+    test('não informa repetições quando nenhuma é detectável', () {
+      final resultado = processar([
+        amostra(0, 0),
+        amostra(100000, 50),
+        amostra(200000, 50),
+        amostra(300000, 0),
+      ]);
+
+      expect(resultado.metricas.forcaMaximaN, 50);
+      expect(resultado.instantePicoS, 0.1);
+      expect(resultado.repeticoes, isEmpty);
+      expect(resultado.mediaPicosN, isNull);
+    });
+
     test('repassa os erros de validação das métricas', () {
       expect(() => processar([]), throwsArgumentError);
       expect(() => processar([amostra(0, 10)]), throwsArgumentError);
