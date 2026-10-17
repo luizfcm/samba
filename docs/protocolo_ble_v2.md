@@ -85,7 +85,7 @@ A característica Estado tem 13 bytes em little-endian:
 
 ## Implementação no aplicativo
 
-`PacoteMedicaoV2.decodificar` converte um pacote de medição numa lista não modificável de `AmostraForca`. A sequência de cada amostra é a da primeira mais o índice, o timestamp é o da anterior mais `delta_us`, a força em mN é dividida por 1000 e o status do cabeçalho é repetido em todas as amostras, sem interpretação dos bits. No modo bruto, portanto, `forcaN` contém as contagens do ADC divididas por 1000; cabe a quem consome as amostras verificar o bit 4.
+`PacoteMedicao.decodificar` converte um pacote de medição numa lista não modificável de `AmostraForca`. A sequência de cada amostra é a da primeira mais o índice, o timestamp é o da anterior mais `delta_us`, a força em mN é dividida por 1000 e o status do cabeçalho é repetido em todas as amostras, sem interpretação dos bits. No modo bruto, portanto, `forcaN` contém as contagens do ADC divididas por 1000; cabe a quem consome as amostras verificar o bit 4.
 
 O decodificador lança `FormatException` para versão diferente de 2, `count` igual a zero, tamanho diferente de `16 + 6 × count`, `delta_us` diferente de zero na primeira amostra ou igual a zero nas seguintes.
 

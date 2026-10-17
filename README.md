@@ -4,7 +4,7 @@ O Sistema de Avaliação de Movimento e Biomecânica Aplicada (SAMBA) é um proj
 
 ## Estado atual
 
-O aplicativo Flutter contém uma fonte simulada de força a 100 Hz, um modelo de amostra, decodificadores dos pacotes BLE v1 e v2 e o cálculo de força máxima, força média, duração e impulso. Esses componentes têm testes unitários.
+O aplicativo Flutter contém uma fonte simulada de força a 100 Hz, um modelo de amostra, um decodificador do pacote BLE v2 e o cálculo de força máxima, força média, duração e impulso. Esses componentes têm testes unitários.
 
 A interface contém apenas a identificação do SAMBA e um aviso de que está em desenvolvimento, sem conexão com a aquisição. Não há comunicação BLE real, firmware executável, processamento específico por exercício, persistência ou sincronização.
 
@@ -13,7 +13,7 @@ O desenvolvimento e a validação inicial do aplicativo estão concentrados em A
 ## Organização
 
 - `app/`: aplicativo Flutter e testes.
-- `docs/`: arquitetura, protocolos BLE e definição das métricas.
+- `docs/`: arquitetura, protocolo BLE v2 e definição das métricas.
 - `firmware/`: registro do estado do firmware, ainda sem código executável.
 - `analysis/`: diretório de análise, ainda sem scripts ou notebooks.
 - `data/raw/` e `data/processed/`: diretórios de dados, atualmente sem amostras versionadas.
@@ -41,6 +41,5 @@ Os testes da fonte simulada usam temporizadores reais; a força é determinísti
 ## Documentação técnica
 
 - [Arquitetura](docs/architecture.md)
-- [Protocolo BLE v2](docs/protocolo_ble_v2.md), adotado pelo dispositivo
-- [Pacote BLE v1](docs/protocolo_ble_v1.md)
+- [Protocolo BLE v2](docs/protocolo_ble_v2.md)
 - [Métricas de força](docs/metrics.md)
