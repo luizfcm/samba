@@ -28,7 +28,7 @@ flutter analyze
 flutter test
 ```
 
-Os testes da fonte simulada usam temporizadores reais; a força é determinística, mas o agendamento e os timestamps podem variar.
+Os testes da fonte simulada usam temporizadores reais, então o momento de cada entrega pode variar um pouco.
 
 ## Documentação técnica
 
