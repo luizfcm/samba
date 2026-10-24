@@ -18,4 +18,4 @@ Uma `FonteForca` entrega `AmostraForca` (sequência, timestamp em µs, força em
 
 ## Processadores
 
-Um `ProcessadorExercicio` recebe a lista de amostras da sessão e devolve o resultado do exercício. Para remada e extensora, `ProcessadorIsometria` calcula as métricas da série e de cada repetição, definidas em [metrics.md](metrics.md).
+Um `ProcessadorExercicio` recebe a lista de amostras da sessão e devolve o resultado do exercício. Para remada e extensora, `ProcessadorIsometria` calcula as métricas da série e de cada repetição, definidas em [metrics.md](metrics.md). Para o salto, `ProcessadorSalto` estima a massa pelo repouso inicial, separa os saltos pelo voo e calcula aceleração, velocidade e potência de cada um.
