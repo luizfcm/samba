@@ -1,6 +1,6 @@
-# Protocolo BLE — versão 2
+# Protocolo BLE versão 2
 
-Este documento especifica a versão **2** do protocolo entre o dispositivo SAMBA e o aplicativo: pacote de medição em lote, serviço GATT, comandos e característica de estado. O pacote de medição é identificado pelo valor `2` no primeiro byte.
+Versão 2 do protocolo entre o dispositivo SAMBA e o aplicativo: pacote de medição em lote, serviço GATT, comandos e característica de estado. O pacote de medição tem o valor 2 no primeiro byte.
 
 ## Aquisição
 
@@ -80,7 +80,7 @@ Os comandos são escritos na característica Controle. O primeiro byte é o opco
 
 START inicia a aquisição e zera a sequência e o timestamp: a primeira amostra enviada depois dele tem sequência 0 e timestamp 0. STOP interrompe a aquisição. TARE inicia a tara no firmware, sinalizada pelo bit 1 de status enquanto estiver em andamento, e ao terminar grava as contagens atuais como deslocamento. MODO_BRUTO liga ou desliga o envio de contagens do ADC, sinalizado pelo bit 4. SET_CALIBRACAO grava o fator e o deslocamento de calibração.
 
-Os comandos não têm resposta direta. O efeito aparece na característica Estado, que notifica o aplicativo sempre que o status ou a calibração mudam. START e STOP também seguem essa regra: o efeito deles aparece no bit 5 de status, notificado pela característica Estado.
+Os comandos não têm resposta direta. O efeito aparece na característica Estado, que notifica o aplicativo quando o status ou a calibração mudam; no caso de START e STOP, pelo bit 5.
 
 ## Estado
 
@@ -103,5 +103,3 @@ A característica notifica o aplicativo quando `status`, `calibration_factor` ou
 `PacoteMedicao.decodificar` converte um pacote de medição numa lista não modificável de `AmostraForca`. A sequência de cada amostra é a da primeira mais o índice, o timestamp é o da anterior mais `delta_us`, a força em mN é dividida por 1000 e o status do cabeçalho é repetido em todas as amostras, sem interpretação dos bits. No modo bruto, portanto, `forcaN` contém as contagens do ADC divididas por 1000; cabe a quem consome as amostras verificar o bit 4.
 
 O decodificador lança `FormatException` para versão diferente de 2, `count` igual a zero, tamanho diferente de `16 + 6 × count`, `delta_us` diferente de zero na primeira amostra ou igual a zero nas seguintes.
-
-O aplicativo ainda não implementa o serviço GATT, os comandos nem a leitura do estado.
