@@ -53,9 +53,36 @@ O pico é a maior força da série. Uma repetição começa na primeira amostra 
 
 São descartados os trechos com menos de duas amostras ou com duração menor que `duracaoMinimaUs`, medida do timestamp da primeira à última amostra do trecho. Lista vazia ou pico menor ou igual a zero devolve lista vazia.
 
+## Salto
+
+`ProcessadorSalto({duracaoRepousoInicialUs = 1000000, fracaoVoo = 0.1, duracaoMinimaVooUs = 100000, fracaoRepouso = 0.05, duracaoMinimaRepousoUs = 100000})` retorna `ResultadoSalto`, com g = 9,81 m/s². O mapa de parâmetros não é usado.
+
+A massa é a média da força nas amostras do primeiro `duracaoRepousoInicialUs`, dividida por g; o peso é `massa × g`. Um voo é um trecho com força menor que `fracaoVoo × peso` que dura pelo menos `duracaoMinimaVooUs`: a decolagem é a primeira amostra do trecho e a aterrissagem, a primeira amostra depois dele. O início do salto é a última amostra do último trecho antes da decolagem em que a força fica dentro de `peso ± fracaoRepouso × peso` por pelo menos `duracaoMinimaRepousoUs`. A busca não passa da aterrissagem do salto anterior; sem esse repouso, o salto é ignorado.
+
+Do início até a última amostra antes da decolagem, cada `PontoSalto` traz:
+
+```text
+a = (F − m·g) / m
+v[i] = v[i−1] + (a[i−1] + a[i]) × Δt / 2,  com v = 0 no início
+P = F · v
+```
+
+| Campo | Métrica | Unidade | Cálculo |
+|---|---|---|---|
+| `inicioS`, `decolagemS`, `aterrissagemS` | Instantes | s | Relativos à primeira amostra da série |
+| `tempoVooS` | Tempo de voo | s | Aterrissagem menos decolagem |
+| `velocidadeDecolagemMs` | Velocidade de decolagem | m/s | Velocidade da última amostra antes do voo |
+| `alturaVooM` | Altura pelo voo | m | `g × tempoVooS² / 8` |
+| `alturaVelocidadeM` | Altura pela velocidade | m | `velocidadeDecolagemMs² / (2 × g)` |
+| `potenciaMaximaW` | Potência máxima | W | Maior `P` do início à decolagem |
+| `forcaMaximaN` | Força máxima | N | Maior força do início à decolagem |
+
+`ResultadoSalto` traz `massaKg`, a lista não modificável de saltos, `alturaMediaM` (média de `alturaVooM`) e `melhorSalto` (maior `alturaVooM`, o primeiro em empate); os dois são nulos sem saltos.
+
 ## Validação
 
 - `calcularMetricasForca` exige pelo menos duas amostras.
-- `calcularMetricasForca` e `detectarRepeticoes` exigem timestamps estritamente crescentes.
+- `calcularMetricasForca`, `detectarRepeticoes` e `ProcessadorSalto` exigem timestamps estritamente crescentes.
 - `detectarRepeticoes` exige frações em (0, 1] e `fracaoFim` menor que `fracaoInicio`.
+- `ProcessadorSalto` exige uma série com pelo menos `duracaoRepousoInicialUs`, cujo trecho inicial tenha média positiva e desvio padrão de no máximo 2% da média.
 - Entradas inválidas produzem `ArgumentError`; `ProcessadorIsometria` repassa esses erros sem alteração.
