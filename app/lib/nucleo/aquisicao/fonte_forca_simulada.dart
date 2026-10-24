@@ -1,20 +1,23 @@
 import 'dart:async';
+import 'dart:math';
 
 import '../modelos/amostra_forca.dart';
 import 'fonte_forca.dart';
+import 'series_simuladas.dart';
 
-/// Gera um sinal triangular entre 0 e 100 N, com período nominal de um segundo.
-///
-/// O temporizador solicita uma amostra a cada 10 ms. Os timestamps usam um
-/// relógio monotonicamente crescente para registrar o tempo real transcorrido,
-/// inclusive quando o agendamento atrasa. Cada aquisição reinicia o sinal,
-/// a sequência e o timestamp em zero.
+/// Envia a série em lotes de 20 amostras a cada 20 ms, como o ESP32. O tempo
+/// de cada amostra vem da posição dela na série.
 class FonteForcaSimulada implements FonteForca {
-  static const _intervalo = Duration(milliseconds: 10);
+  FonteForcaSimulada({List<double>? forcasN})
+    : _forcasN = List.unmodifiable(forcasN ?? gerarSerieIsometria());
+
+  static const _amostrasPorLote = 20;
+  static const _intervalo = Duration(milliseconds: 20);
+  static const _passoUs = 1000;
+  final List<double> _forcasN;
   final _controlador = StreamController<AmostraForca>.broadcast();
-  final _relogio = Stopwatch();
   Timer? _temporizador;
-  int _sequencia = 0;
+  int _indice = 0;
 
   @override
   Stream<AmostraForca> get amostras => _controlador.stream;
@@ -23,32 +26,31 @@ class FonteForcaSimulada implements FonteForca {
   Future<void> iniciar() async {
     if (_temporizador != null) return;
 
-    _sequencia = 0;
-    _relogio
-      ..reset()
-      ..start();
-    _temporizador = Timer.periodic(_intervalo, (_) => _emitirAmostra());
-    _emitirAmostra(timestampUs: 0);
+    _indice = 0;
+    _temporizador = Timer.periodic(_intervalo, (_) => _emitirLote());
+    _emitirLote();
   }
 
   @override
-  Future<void> parar() async {
+  Future<void> parar() async => _cancelarTemporizador();
+
+  void _cancelarTemporizador() {
     _temporizador?.cancel();
     _temporizador = null;
-    _relogio.stop();
   }
 
-  void _emitirAmostra({int? timestampUs}) {
-    final fase = _sequencia % 100;
-    final forcaN = (fase <= 50 ? fase : 100 - fase) * 2.0;
-    _controlador.add(
-      AmostraForca(
-        sequencia: _sequencia,
-        timestampUs: timestampUs ?? _relogio.elapsedMicroseconds,
-        forcaN: forcaN,
-        status: 0,
-      ),
-    );
-    _sequencia++;
+  void _emitirLote() {
+    final fim = min(_indice + _amostrasPorLote, _forcasN.length);
+    for (; _indice < fim; _indice++) {
+      _controlador.add(
+        AmostraForca(
+          sequencia: _indice,
+          timestampUs: _indice * _passoUs,
+          forcaN: _forcasN[_indice],
+          status: 0,
+        ),
+      );
+    }
+    if (_indice >= _forcasN.length) _cancelarTemporizador();
   }
 }
