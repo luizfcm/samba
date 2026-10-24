@@ -2,6 +2,7 @@ import 'dart:math';
 
 import '../../../nucleo/modelos/amostra_forca.dart';
 import 'processador_exercicio.dart';
+import 'validar_timestamps.dart';
 
 const _gravidadeMs2 = 9.81;
 
@@ -99,15 +100,7 @@ class ProcessadorSalto implements ProcessadorExercicio<ResultadoSalto> {
     required List<AmostraForca> amostras,
     required Map<String, double> parametros,
   }) {
-    for (var indice = 1; indice < amostras.length; indice++) {
-      if (amostras[indice].timestampUs <= amostras[indice - 1].timestampUs) {
-        throw ArgumentError(
-          'Os timestamps das amostras devem ser estritamente crescentes '
-          '(índice $indice).',
-        );
-      }
-    }
-
+    validarTimestamps(amostras);
     final massaKg = _calcularMassaKg(amostras);
     final pesoN = massaKg * _gravidadeMs2;
     final saltos = <ResultadoSaltoIndividual>[];
