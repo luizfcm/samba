@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'nucleo/aquisicao/fonte_forca_simulada.dart';
 import 'nucleo/persistencia/banco_local.dart';
 import 'tela_grafico_sessao.dart';
+import 'nucleo/aquisicao/series_simuladas.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -49,24 +50,35 @@ class _TelaTesteBancoState extends State<TelaTesteBanco> {
 
     setState(() {
       _ocupado = true;
-      _mensagem = 'Coletando 1.000 amostras a 100 Hz...';
+      _mensagem = 'Coletando simulação completa a 1.000 Hz...';
     });
 
-    final fonte = FonteForcaSimulada();
+    // Gera a série completa de 10 repetições.
+    final serieCompleta = gerarSerieIsometria();
+
+    // Identifica automaticamente a quantidade de amostras.
+    final quantidadeEsperada = serieCompleta.length;
+
+    // Utiliza a fonte simulada original do SAMBA.
+    final fonte = FonteForcaSimulada(forcasN: serieCompleta);
 
     try {
       // Prepara a escuta antes de iniciar o simulador.
       final coleta = fonte.amostras
-          .take(1000)
+          .take(quantidadeEsperada)
           .toList()
-          .timeout(const Duration(seconds: 30));
+          .timeout(const Duration(minutes: 3));
 
       final inicioUtc = DateTime.now().toUtc();
+
+      final cronometroColeta = Stopwatch()..start();
 
       await fonte.iniciar();
 
       // Aguarda o recebimento das 1.000 amostras.
       final amostras = await coleta;
+
+      cronometroColeta.stop();
 
       await fonte.parar();
 
@@ -74,9 +86,9 @@ class _TelaTesteBancoState extends State<TelaTesteBanco> {
       final cronometro = Stopwatch()..start();
 
       final sessaoId = await BancoLocal.salvarSessao(
-        exercicio: 'terra',
+        exercicio: 'remada',
         inicioUtc: inicioUtc,
-        frequenciaHz: 100,
+        frequenciaHz: 1000,
         amostras: amostras,
       );
 
@@ -93,6 +105,8 @@ class _TelaTesteBancoState extends State<TelaTesteBanco> {
         _mensagem =
             'Recebidas: ${amostras.length}\n'
             'Salvas no SQLite: $quantidadeSalva\n'
+            'Tempo de coleta: '
+            '${cronometroColeta.elapsedMilliseconds} ms\n'
             'Tempo de gravação: '
             '${cronometro.elapsedMilliseconds} ms';
       });
@@ -123,7 +137,7 @@ class _TelaTesteBancoState extends State<TelaTesteBanco> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
-              'Simulação de força - 100 Hz',
+              'Simulação de força - 1000 Hz',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
 

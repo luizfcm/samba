@@ -1,25 +1,18 @@
-
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 
 import 'nucleo/persistencia/banco_local.dart';
 
 class TelaGraficoSessao extends StatefulWidget {
-  const TelaGraficoSessao({
-    super.key,
-    required this.sessaoId,
-  });
+  const TelaGraficoSessao({super.key, required this.sessaoId});
 
   final String sessaoId;
 
   @override
-  State<TelaGraficoSessao> createState() =>
-      _TelaGraficoSessaoState();
+  State<TelaGraficoSessao> createState() => _TelaGraficoSessaoState();
 }
 
-class _TelaGraficoSessaoState
-    extends State<TelaGraficoSessao> {
-
+class _TelaGraficoSessaoState extends State<TelaGraficoSessao> {
   late final Future<List<Map<String, Object?>>> _consulta;
 
   @override
@@ -27,56 +20,42 @@ class _TelaGraficoSessaoState
     super.initState();
 
     // Busca os dados da sessão no SQLite.
-    _consulta = BancoLocal.listarAmostrasDaSessao(
-      widget.sessaoId,
-    );
+    _consulta = BancoLocal.listarAmostrasDaSessao(widget.sessaoId);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Gráfico de força'),
-      ),
+      appBar: AppBar(title: const Text('Gráfico de força')),
 
       body: FutureBuilder<List<Map<String, Object?>>>(
         future: _consulta,
 
         builder: (context, snapshot) {
-
           // Enquanto consulta o banco.
-          if (snapshot.connectionState !=
-              ConnectionState.done) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
           }
 
           // Caso ocorra algum erro.
           if (snapshot.hasError) {
             return Center(
-              child: Text(
-                'Erro ao carregar dados: ${snapshot.error}',
-              ),
+              child: Text('Erro ao carregar dados: ${snapshot.error}'),
             );
           }
 
           final dados = snapshot.data ?? [];
 
           if (dados.isEmpty) {
-            return const Center(
-              child: Text('Nenhuma amostra encontrada.'),
-            );
+            return const Center(child: Text('Nenhuma amostra encontrada.'));
           }
 
           // Converte os registros do SQLite em pontos.
           final pontos = dados.map((amostra) {
             final tempoS =
-                (amostra['timestamp_us'] as num)
-                    .toDouble() / 1000000.0;
+                (amostra['timestamp_us'] as num).toDouble() / 1000000.0;
 
-            final forcaN =
-                (amostra['forca_n'] as num).toDouble();
+            final forcaN = (amostra['forca_n'] as num).toDouble();
 
             return FlSpot(tempoS, forcaN);
           }).toList();
@@ -84,12 +63,10 @@ class _TelaGraficoSessaoState
           // Identifica a maior força registrada.
           final forcaMaxima = pontos.fold<double>(
             0,
-            (maximo, ponto) =>
-                ponto.y > maximo ? ponto.y : maximo,
+            (maximo, ponto) => ponto.y > maximo ? ponto.y : maximo,
           );
 
-          final limiteY =
-              forcaMaxima > 0 ? forcaMaxima * 1.1 : 1.0;
+          final limiteY = forcaMaxima > 0 ? forcaMaxima * 1.1 : 1.0;
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
@@ -97,20 +74,14 @@ class _TelaGraficoSessaoState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-
                 const Text(
                   'Força em função do tempo',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
 
                 const SizedBox(height: 12),
 
-                Text(
-                  'Amostras carregadas: ${dados.length}',
-                ),
+                Text('Amostras carregadas: ${dados.length}'),
 
                 Text(
                   'Força máxima: '
@@ -119,9 +90,7 @@ class _TelaGraficoSessaoState
 
                 const SizedBox(height: 30),
 
-                const Center(
-                  child: Text('Força (N)'),
-                ),
+                const Center(child: Text('Força (N)')),
 
                 const SizedBox(height: 12),
 
@@ -132,32 +101,48 @@ class _TelaGraficoSessaoState
                   child: LineChart(
                     LineChartData(
                       minX: 0,
-                      maxX: pontos.last.x > 0
-                          ? pontos.last.x
-                          : 1,
+                      maxX: pontos.last.x > 0 ? pontos.last.x : 1,
                       minY: 0,
                       maxY: limiteY,
 
                       // Grade do gráfico.
-                      gridData: const FlGridData(
-                        show: true,
-                      ),
+                      gridData: const FlGridData(show: true),
 
                       // Borda do gráfico.
-                      borderData: FlBorderData(
-                        show: true,
-                      ),
+                      borderData: FlBorderData(show: true),
 
                       // Configuração dos eixos.
-                      titlesData: const FlTitlesData(
-                        topTitles: AxisTitles(
-                          sideTitles:
-                              SideTitles(showTitles: false),
+
+                      // Configuração dos eixos.
+                      titlesData: FlTitlesData(
+                        // Oculta os números superiores.
+                        topTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
                         ),
 
-                        rightTitles: AxisTitles(
-                          sideTitles:
-                              SideTitles(showTitles: false),
+                        // Oculta os números da direita.
+                        rightTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+
+                        // Eixo X: tempo em segundos.
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            interval: pontos.last.x > 30 ? 10 : 2,
+                            reservedSize: 32,
+                            maxIncluded: false,
+                          ),
+                        ),
+
+                        // Eixo Y: força em newtons.
+                        leftTitles: const AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            interval: 100,
+                            reservedSize: 46,
+                            maxIncluded: false,
+                          ),
                         ),
                       ),
 
@@ -169,20 +154,17 @@ class _TelaGraficoSessaoState
                           barWidth: 2,
                           color: Colors.deepPurple,
 
-                          dotData: const FlDotData(
-                            show: false,
-                          ),
+                          dotData: const FlDotData(show: false),
                         ),
                       ],
                     ),
+                    duration: Duration.zero,
                   ),
                 ),
 
                 const SizedBox(height: 12),
 
-                const Center(
-                  child: Text('Tempo (s)'),
-                ),
+                const Center(child: Text('Tempo (s)')),
               ],
             ),
           );
