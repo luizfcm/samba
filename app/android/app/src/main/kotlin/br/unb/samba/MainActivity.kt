@@ -1,4 +1,4 @@
-package com.example.app
+package br.unb.samba
 
 import io.flutter.embedding.android.FlutterActivity
 

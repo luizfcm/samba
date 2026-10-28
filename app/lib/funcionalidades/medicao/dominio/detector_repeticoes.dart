@@ -1,4 +1,5 @@
 import '../../../nucleo/modelos/amostra_forca.dart';
+import 'validar_timestamps.dart';
 
 class Repeticao {
   const Repeticao({required this.indiceInicio, required this.indiceFim});
@@ -25,14 +26,7 @@ List<Repeticao> detectarRepeticoes(
   if (fracaoFim >= fracaoInicio) {
     throw ArgumentError('A fração de fim deve ser menor que a de início.');
   }
-  for (var indice = 1; indice < amostras.length; indice++) {
-    if (amostras[indice].timestampUs <= amostras[indice - 1].timestampUs) {
-      throw ArgumentError(
-        'Os timestamps das amostras devem ser estritamente crescentes '
-        '(índice $indice).',
-      );
-    }
-  }
+  validarTimestamps(amostras);
   if (amostras.isEmpty) return const [];
 
   var pico = amostras.first.forcaN;

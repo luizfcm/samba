@@ -1,4 +1,5 @@
 import '../../../nucleo/modelos/amostra_forca.dart';
+import 'validar_timestamps.dart';
 
 class MetricasForca {
   const MetricasForca({
@@ -24,14 +25,7 @@ MetricasForca calcularMetricasForca(List<AmostraForca> amostras) {
     throw ArgumentError('São necessárias pelo menos duas amostras.');
   }
 
-  for (var indice = 1; indice < amostras.length; indice++) {
-    if (amostras[indice].timestampUs <= amostras[indice - 1].timestampUs) {
-      throw ArgumentError(
-        'Os timestamps das amostras devem ser estritamente crescentes '
-        '(índice $indice).',
-      );
-    }
-  }
+  validarTimestamps(amostras);
 
   var maxima = amostras.first.forcaN;
   var soma = 0.0;

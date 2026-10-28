@@ -1,7 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:samba_app/nucleo/aquisicao/fonte_forca.dart';
 import 'package:samba_app/nucleo/aquisicao/fonte_forca_simulada.dart';
+import 'package:samba_app/nucleo/aquisicao/series_simuladas.dart';
 import 'package:samba_app/nucleo/modelos/amostra_forca.dart';
+
+List<double> rampa(int quantidade) => [
+  for (var indice = 0; indice < quantidade; indice++) indice.toDouble(),
+];
 
 Future<List<AmostraForca>> coletarAmostras(FonteForca fonte, int quantidade) =>
     fonte.amostras
@@ -9,148 +14,156 @@ Future<List<AmostraForca>> coletarAmostras(FonteForca fonte, int quantidade) =>
         .toList()
         .timeout(const Duration(seconds: 5));
 
+Future<void> aguardarEntregas() => Future<void>.delayed(Duration.zero);
+
 void main() {
-  late FonteForca fonte;
+  group('FonteForcaSimulada', () {
+    late FonteForca fonte;
+    late List<AmostraForca> recebidas;
 
-  setUp(() {
-    fonte = FonteForcaSimulada();
-  });
+    setUp(() {
+      fonte = FonteForcaSimulada(forcasN: rampa(100));
+      recebidas = [];
+      final assinatura = fonte.amostras.listen(recebidas.add);
+      addTearDown(assinatura.cancel);
+    });
 
-  tearDown(() async {
-    await fonte.parar();
-  });
+    tearDown(() async {
+      await fonte.parar();
+    });
 
-  test('nao emite antes de iniciar', () async {
-    final recebidas = <AmostraForca>[];
-    final assinatura = fonte.amostras.listen(recebidas.add);
-    addTearDown(assinatura.cancel);
+    test('não emite antes de iniciar', () async {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
 
-    await Future<void>.delayed(const Duration(milliseconds: 30));
-    expect(recebidas, isEmpty);
-  });
+      expect(recebidas, isEmpty);
+    });
 
-  test('emite a 100 Hz com sequencia e tempo desde zero', () async {
-    final coleta = coletarAmostras(fonte, 100);
-    final relogio = Stopwatch()..start();
-    await fonte.iniciar();
-    final recebidas = await coleta;
-    relogio.stop();
-    await fonte.parar();
+    test('emite lotes de 20 amostras a cada 20 ms', () async {
+      final relogio = Stopwatch()..start();
+      final coleta = coletarAmostras(fonte, 60);
+      await fonte.iniciar();
+      await aguardarEntregas();
+      expect(recebidas, hasLength(20));
 
-    // São 99 intervalos entre a amostra inicial e a centésima (990 ms).
-    // A margem de 40 ms considera a precisão do agendamento do sistema.
-    expect(relogio.elapsedMilliseconds, greaterThanOrEqualTo(950));
-    expect(recebidas, hasLength(100));
-    expect(recebidas.first.timestampUs, 0);
-    expect(recebidas.last.timestampUs, greaterThanOrEqualTo(950000));
-    expect(
-      recebidas.last.timestampUs,
-      lessThanOrEqualTo(relogio.elapsedMicroseconds),
-    );
-    for (var indice = 0; indice < recebidas.length; indice++) {
-      expect(recebidas[indice].sequencia, indice);
-      if (indice > 0) {
-        expect(
-          recebidas[indice].timestampUs,
-          greaterThan(recebidas[indice - 1].timestampUs),
-        );
+      await coleta;
+      relogio.stop();
+
+      // O primeiro lote sai no início e os outros dois após 40 ms; a margem
+      // considera a precisão do agendamento do sistema.
+      expect(relogio.elapsedMilliseconds, greaterThanOrEqualTo(35));
+      expect(recebidas, hasLength(60));
+    });
+
+    test('numera e marca o tempo das amostras pelo índice da série', () async {
+      await fonte.iniciar();
+      await coletarAmostras(fonte, 40);
+
+      for (var indice = 0; indice < 40; indice++) {
+        expect(recebidas[indice].sequencia, indice);
+        expect(recebidas[indice].timestampUs, indice * 1000);
+        expect(recebidas[indice].forcaN, indice);
+        expect(recebidas[indice].status, 0);
       }
-      expect(recebidas[indice].status, 0);
-    }
-  });
+    });
 
-  test('reproduz os valores conhecidos do sinal triangular', () async {
-    final coleta = coletarAmostras(fonte, 101);
-    await fonte.iniciar();
-    final recebidas = await coleta;
+    test('reproduz a série de isometria por padrão', () async {
+      final fonte = FonteForcaSimulada();
+      addTearDown(fonte.parar);
+      final coleta = coletarAmostras(fonte, 20);
+      await fonte.iniciar();
 
-    expect(recebidas[0].forcaN, 0);
-    expect(recebidas[1].forcaN, 2);
-    expect(recebidas[25].forcaN, 50);
-    expect(recebidas[50].forcaN, 100);
-    expect(recebidas[75].forcaN, 50);
-    expect(recebidas[99].forcaN, 2);
-    expect(recebidas[100].forcaN, 0);
-  });
+      expect(
+        (await coleta).map((amostra) => amostra.forcaN),
+        gerarSerieIsometria().sublist(0, 20),
+      );
+    });
 
-  test('iniciar novamente nao duplica nem reinicia o gerador', () async {
-    final recebidas = <AmostraForca>[];
-    final assinatura = fonte.amostras.listen(recebidas.add);
-    addTearDown(assinatura.cancel);
-    final primeiraColeta = coletarAmostras(fonte, 3);
+    test('para de emitir ao fim da série e pode ser reiniciada', () async {
+      final fonte = FonteForcaSimulada(forcasN: rampa(45));
+      addTearDown(fonte.parar);
+      final recebidas = <AmostraForca>[];
+      final assinatura = fonte.amostras.listen(recebidas.add);
+      addTearDown(assinatura.cancel);
 
-    await Future.wait([fonte.iniciar(), fonte.iniciar()]);
-    await primeiraColeta;
-    final segundaColeta = coletarAmostras(fonte, 3);
-    await fonte.iniciar();
-    await segundaColeta;
-    await fonte.parar();
+      await fonte.iniciar();
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(recebidas, hasLength(45));
+      expect(recebidas.last.sequencia, 44);
+      expect(recebidas.last.timestampUs, 44000);
 
-    expect(recebidas.map((amostra) => amostra.sequencia), [0, 1, 2, 3, 4, 5]);
-    expect(recebidas.last.timestampUs, greaterThanOrEqualTo(45000));
-  });
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(recebidas, hasLength(45));
 
-  test('parar cancela a emissao e pode ser chamado repetidamente', () async {
-    final recebidas = <AmostraForca>[];
-    final assinatura = fonte.amostras.listen(recebidas.add);
-    addTearDown(assinatura.cancel);
-    await fonte.parar();
-    final coleta = coletarAmostras(fonte, 3);
-    await fonte.iniciar();
-    await coleta;
-    await fonte.parar();
-    final quantidade = recebidas.length;
-    expect(quantidade, 3);
+      await fonte.iniciar();
+      await aguardarEntregas();
+      expect(recebidas, hasLength(65));
+      expect(recebidas[45].sequencia, 0);
+      expect(recebidas[45].timestampUs, 0);
+    });
 
-    await fonte.parar();
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    expect(recebidas, hasLength(quantidade));
-  });
+    test('iniciar novamente não duplica nem reinicia a série', () async {
+      final primeiraColeta = coletarAmostras(fonte, 40);
+      await Future.wait([fonte.iniciar(), fonte.iniciar()]);
+      await primeiraColeta;
+      final segundaColeta = coletarAmostras(fonte, 20);
+      await fonte.iniciar();
+      await segundaColeta;
+      await fonte.parar();
 
-  test('parar imediatamente nao deixa um gerador ativo', () async {
-    final recebidas = <AmostraForca>[];
-    final assinatura = fonte.amostras.listen(recebidas.add);
-    addTearDown(assinatura.cancel);
+      expect(recebidas.map((amostra) => amostra.sequencia).take(60), [
+        for (var indice = 0; indice < 60; indice++) indice,
+      ]);
+    });
 
-    await fonte.iniciar();
-    await fonte.parar();
-    expect(recebidas, hasLength(1));
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    expect(recebidas, hasLength(1));
-  });
+    test('parar cancela a emissão e pode ser chamado repetidamente', () async {
+      await fonte.parar();
+      final coleta = coletarAmostras(fonte, 20);
+      await fonte.iniciar();
+      await coleta;
+      await fonte.parar();
+      await aguardarEntregas();
+      final quantidade = recebidas.length;
 
-  test('reiniciar reproduz o sinal e zera sequencia e timestamp', () async {
-    final primeiraColeta = coletarAmostras(fonte, 4);
-    await fonte.iniciar();
-    final primeiras = await primeiraColeta;
-    await fonte.parar();
-    final segundaColeta = coletarAmostras(fonte, 4);
-    await fonte.iniciar();
-    final segundas = await segundaColeta;
-    await fonte.parar();
+      await fonte.parar();
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(recebidas, hasLength(quantidade));
+    });
 
-    expect(primeiras.first.timestampUs, 0);
-    expect(segundas.first.timestampUs, 0);
-    for (var indice = 0; indice < segundas.length; indice++) {
-      expect(segundas[indice].sequencia, primeiras[indice].sequencia);
-      if (indice > 0) {
-        expect(
-          segundas[indice].timestampUs,
-          greaterThan(segundas[indice - 1].timestampUs),
-        );
+    test('parar imediatamente entrega só o primeiro lote', () async {
+      await fonte.iniciar();
+      await fonte.parar();
+      await aguardarEntregas();
+      expect(recebidas, hasLength(20));
+
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(recebidas, hasLength(20));
+    });
+
+    test('reiniciar recomeça do início da série', () async {
+      final primeiraColeta = coletarAmostras(fonte, 30);
+      await fonte.iniciar();
+      final primeiras = await primeiraColeta;
+      await fonte.parar();
+      final segundaColeta = coletarAmostras(fonte, 30);
+      await fonte.iniciar();
+      final segundas = await segundaColeta;
+
+      for (var indice = 0; indice < 30; indice++) {
+        expect(segundas[indice].sequencia, primeiras[indice].sequencia);
+        expect(segundas[indice].timestampUs, primeiras[indice].timestampUs);
+        expect(segundas[indice].forcaN, primeiras[indice].forcaN);
       }
-      expect(segundas[indice].forcaN, primeiras[indice].forcaN);
-      expect(segundas[indice].status, primeiras[indice].status);
-    }
-  });
+      expect(segundas.first.sequencia, 0);
+    });
 
-  test('compartilha as mesmas amostras entre assinantes', () async {
-    final primeiraColeta = coletarAmostras(fonte, 3);
-    final segundaColeta = coletarAmostras(fonte, 3);
-    await fonte.iniciar();
-    final recebidas = await Future.wait([primeiraColeta, segundaColeta]);
+    test('compartilha as mesmas amostras entre assinantes', () async {
+      final primeiraColeta = coletarAmostras(fonte, 20);
+      final segundaColeta = coletarAmostras(fonte, 20);
+      await fonte.iniciar();
+      final coletas = await Future.wait([primeiraColeta, segundaColeta]);
 
-    expect(recebidas[0], hasLength(3));
-    expect(recebidas[1], orderedEquals(recebidas[0]));
+      expect(coletas[0], hasLength(20));
+      expect(coletas[1], orderedEquals(coletas[0]));
+    });
   });
 }
