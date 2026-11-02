@@ -1,4 +1,3 @@
-
 import 'dart:math' as math;
 
 import 'package:path/path.dart';
@@ -14,10 +13,7 @@ class BancoLocal {
   static Future<Database> abrir() async {
     if (_banco != null) return _banco!;
 
-    final caminho = join(
-      await getDatabasesPath(),
-      'samba_local.db',
-    );
+    final caminho = join(await getDatabasesPath(), 'samba_local.db');
 
     _banco = await openDatabase(
       caminho,
@@ -90,13 +86,8 @@ class BancoLocal {
       // Salva as amostras em lotes de até 500.
       const tamanhoLote = 500;
 
-      for (var inicio = 0;
-          inicio < amostras.length;
-          inicio += tamanhoLote) {
-        final fim = math.min(
-          inicio + tamanhoLote,
-          amostras.length,
-        );
+      for (var inicio = 0; inicio < amostras.length; inicio += tamanhoLote) {
+        final fim = math.min(inicio + tamanhoLote, amostras.length);
 
         final lote = txn.batch();
 
@@ -120,20 +111,14 @@ class BancoLocal {
   }
 
   // Lista as sessões salvas.
-  static Future<List<Map<String, Object?>>>
-      listarSessoes() async {
+  static Future<List<Map<String, Object?>>> listarSessoes() async {
     final db = await abrir();
 
-    return db.query(
-      'sessoes',
-      orderBy: 'inicio_utc DESC',
-    );
+    return db.query('sessoes', orderBy: 'inicio_utc DESC');
   }
 
   // Confere quantas amostras foram realmente armazenadas.
-  static Future<int> contarAmostras(
-    String sessaoId,
-  ) async {
+  static Future<int> contarAmostras(String sessaoId) async {
     final db = await abrir();
 
     final resultado = await db.rawQuery(
