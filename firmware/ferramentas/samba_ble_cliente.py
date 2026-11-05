@@ -66,6 +66,8 @@ def decodifica_estado(dados: bytes):
     if len(dados) != 13:
         raise ValueError("Estado com %d bytes (esperado 13)" % len(dados))
     versao, status, taxa, fator, desloc = struct.unpack("<BHHfi", dados)
+    if versao != 2:
+        raise ValueError("Estado com versao %d (esperado 2)" % versao)
     return {"versao": versao, "status": status, "taxa": taxa, "fator": fator, "desloc": desloc}
 
 
@@ -87,7 +89,9 @@ class Coletor:
         self.estado = None
 
     def zera(self):
+        est = self.estado
         self.__init__()
+        self.estado = est
 
     def on_medicao(self, _, dados: bytearray):
         agora = time.perf_counter()
@@ -118,6 +122,16 @@ class Coletor:
     def media_valor(self, ultimas: int):
         v = [a[2] for a in self.amostras[-ultimas:]]
         return sum(v) / len(v) if v else None
+
+    def janela_calibracao(self, inicio: int, minimo: int = 1000):
+        fatia = self.amostras[inicio:]
+        if len(fatia) < minimo:
+            return None, "poucas amostras recebidas (%d < %d); confira o MTU e a conexao" % (len(fatia), minimo)
+        ruins = [a[3] for a in fatia if a[3] & ((1 << 0) | (1 << 3))]  # SATURACAO ou ERRO_ADC
+        if ruins:
+            return None, "saturacao ou erro no ADC durante a coleta (%s)" % nomes_status(ruins[0])
+        vals = [a[2] for a in fatia[-1500:]]
+        return sum(vals) / len(vals), None
 
     def relatorio(self):
         a = self.amostras
@@ -161,9 +175,13 @@ async def entrada(msg):
 
 async def principal(args):
     print("Procurando o SAMBA...")
-    dispositivo = await BleakScanner.find_device_by_filter(
-        lambda d, ad: (d.name or ad.local_name or "") == args.nome or UUID_SERVICO in [u.lower() for u in ad.service_uuids],
-        timeout=15.0)
+    def filtro_samba(d, ad):
+        uuids = [u.lower() for u in (ad.service_uuids or [])]
+        if ad.local_name == args.nome or d.name == args.nome:
+            return True
+        return args.nome == "SAMBA" and UUID_SERVICO in uuids
+
+    dispositivo = await BleakScanner.find_device_by_filter(filtro_samba, timeout=15.0)
     if dispositivo is None:
         print("Nao encontrado. O firmware esta rodando? O celular nao esta conectado nele?")
         return 1
@@ -215,15 +233,25 @@ async def calibra(cli, col, kg):
     col.zera()
     await comando(cli, OP_START)
     await entrada("Deixe a celula SEM carga e tecle Enter...")
+    i0 = len(col.amostras)
     await asyncio.sleep(2.0)
-    zero = col.media_valor(1500)
+    zero, erro_zero = col.janela_calibracao(i0)
+    if erro_zero:
+        await comando(cli, OP_STOP)
+        await comando(cli, OP_MODO_BRUTO, 0)
+        print("ERRO na leitura sem carga: %s" % erro_zero)
+        return
     await entrada("Coloque %.3f kg, espere parar de balancar e tecle Enter..." % kg)
+    i1 = len(col.amostras)
     await asyncio.sleep(2.0)
-    carga = col.media_valor(1500)
+    carga, erro_carga = col.janela_calibracao(i1)
     await comando(cli, OP_STOP)
     await comando(cli, OP_MODO_BRUTO, 0)
-    if zero is None or carga is None or abs(carga - zero) < 100:
-        print("ERRO: a leitura nao mudou o suficiente (zero=%s, carga=%s)." % (zero, carga))
+    if erro_carga:
+        print("ERRO na leitura com carga: %s" % erro_carga)
+        return
+    if abs(carga - zero) < 100:
+        print("ERRO: a leitura nao mudou o suficiente (zero=%.1f, carga=%.1f)." % (zero, carga))
         return
     fator = kg * G * 1000.0 / (carga - zero)
     desloc = int(round(zero))

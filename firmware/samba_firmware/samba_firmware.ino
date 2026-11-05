@@ -60,7 +60,8 @@ std::atomic<bool> temCalibracao{false};
 std::atomic<bool> modoBruto{false};
 std::atomic<bool> rodando{false};
 std::atomic<uint16_t> statusBase{ST_SEM_CAL};
-std::atomic<bool> satRecente{false};
+std::atomic<uint16_t> sessaoAtual{0};
+std::atomic<bool> satAtual{false}, satRecente{false};
 std::atomic<bool> salvarPendente{false};
 std::atomic<int32_t> ultimoBruto{0};
 std::atomic<float> avddV{NAN};
@@ -168,6 +169,7 @@ void processaComando(const Comando &c) {
       checaAvdd();  // ~8 ms, antes do 1o dado: o app ja recebe o bit 3 certo
       xQueueReset(filaAmostras);
       aq.sessao++;
+      sessaoAtual = aq.sessao;
       aq.seq = 0;
       aq.primeiro = true;
       rodando = true;
@@ -217,24 +219,24 @@ void terminaMedia() {
     salvarPendente = true;
     Serial.printf("[TARA] deslocamento = %ld contagens\n", (long)media);
   } else {
-    int32_t dif = media - deslocamento;
-    if (abs(dif) < 100) {
+    int64_t dif = (int64_t)media - (int64_t)deslocamento.load();
+    if (llabs(dif) < 100) {
       Serial.println("[CALKG] ERRO: leitura quase igual a tara. Faca 'tara' sem carga antes e confira a massa.");
     } else {
-      float f = aq.massaKg * G_PADRAO * 1000.0f / (float)dif;
+      float f = (float)((double)aq.massaKg * (double)G_PADRAO * 1000.0 / (double)dif);
       aplicaCalibracao(f, deslocamento, true);
       Serial.printf("[CALKG] fator = %.7f mN/contagem (%.2f contagens/kg), deslocamento = %ld\n", (double)f,
-                    dif / aq.massaKg, (long)deslocamento.load());
+                    (double)dif / (double)aq.massaKg, (long)deslocamento.load());
     }
   }
   aq.media = Media::NENHUMA;
 }
 
 inline int32_t converte(int32_t bruto) {
-  float mN = (float)(bruto - deslocamento.load()) * fator.load();  // diferenca < 2^24: exata em float
-  if (mN > 2.0e9f) return INT32_MAX;
-  if (mN < -2.0e9f) return INT32_MIN;
-  return (int32_t)lroundf(mN);
+  double mN = (double)((int64_t)bruto - (int64_t)deslocamento.load()) * (double)fator.load();
+  if (mN >= (double)INT32_MAX) return INT32_MAX;
+  if (mN <= (double)INT32_MIN) return INT32_MIN;
+  return (int32_t)llround(mN);
 }
 
 void tarefaAquisicao(void *) {
@@ -301,11 +303,12 @@ void tarefaAquisicao(void *) {
     if (travado != aq.erroTravado) Serial.println(travado ? "[ADS] ERRO: leitura travada (bit 3)" : "[ADS] leitura destravou");
     aq.erroTravado = travado;
     bool sat = bruto >= LIMITE_SATURACAO || bruto <= -LIMITE_SATURACAO;
+    satAtual = sat;
     if (sat) satRecente = true;
 
     // --- Tara / calibracao por media ---
     if (aq.media != Media::NENHUMA) {
-      if (sat || aq.erroTravado || aq.avddBaixa) {
+      if (sat || aq.erroRegs || aq.erroTravado || aq.avddBaixa) {
         Serial.println("[MEDIA] cancelada: saturacao ou erro no ADC. Deslocamento mantido.");
         aq.media = Media::NENHUMA;
       } else {
@@ -422,8 +425,8 @@ void iniciaBle() {
   srv->start();
 
   NimBLEAdvertising *adv = NimBLEDevice::getAdvertising();
-  adv->setName(NOME_BLE);
   adv->addServiceUUID(UUID_SERVICO);
+  adv->setName(NOME_BLE);
   if (!adv->start()) Serial.println("[BLE] ERRO ao iniciar o anuncio");
 }
 
@@ -457,6 +460,18 @@ void servicoMedicao() {
   static Amostra sobra;           // amostra que nao coube no pacote anterior
   static bool temSobra = false;
 
+  uint16_t sessaoViva = sessaoAtual.load();
+  if (pronto && pac.sessao() != sessaoViva) {
+    pac.limpa();
+    pronto = false;
+  }
+  if (temSobra && sobra.sessao != sessaoViva) {
+    temSobra = false;
+  }
+  if (!pronto && pac.quantidade() > 0 && pac.sessao() != sessaoViva) {
+    pac.limpa();
+  }
+
   if (pronto) {
     if (!enviaPacote(pac)) {
       vTaskDelay(1);
@@ -474,6 +489,11 @@ void servicoMedicao() {
       temSobra = false;
     } else if (xQueueReceive(filaAmostras, &a, pdMS_TO_TICKS(pac.quantidade() ? 2 : 5)) != pdTRUE) {
       break;
+    }
+    sessaoViva = sessaoAtual.load();
+    if (a.sessao != sessaoViva) {
+      if (pac.quantidade() > 0 && pac.sessao() != sessaoViva) pac.limpa();
+      continue;
     }
     if (pac.quantidade() > 0 && a.sessao != pac.sessao()) pac.limpa();  // novo START: descarta o resto da sessao velha
     if (maxN == 0) {  // MTU 23: nem 1 amostra cabe
@@ -499,26 +519,31 @@ void servicoMedicao() {
 }
 
 void servicoEstado() {
-  static uint32_t ultimoMs = 0;
-  static uint16_t ultSt = 0xFFFF;
+  static uint32_t ultimoSatMs = 0, ultimoRetryMs = 0;
+  static uint16_t ultSt = 0xFFFF, bitSat = 0;
   static float ultF = NAN;
   static int32_t ultD = 0;
+
   uint32_t agora = millis();
-  if (agora - ultimoMs < ESTADO_INTERVALO_MS) return;
-  ultimoMs = agora;
-  uint16_t st = statusBase | (satRecente.exchange(false) ? ST_SATURACAO : 0);
-  float f = fator;
-  int32_t d = deslocamento;
+  if (agora - ultimoSatMs >= ESTADO_INTERVALO_MS) {
+    ultimoSatMs = agora;
+    bitSat = satRecente.exchange(false) ? ST_SATURACAO : 0;
+  }
+  uint16_t st = statusBase.load() | bitSat;
+  float f = fator.load();
+  int32_t d = deslocamento.load();
   bool mudou = st != ultSt || f != ultF || d != ultD;
-  if (!mudou && !forcaEstado) return;
+  if (!mudou && !(forcaEstado && agora - ultimoRetryMs >= 20)) return;
+
   ultSt = st;
   ultF = f;
   ultD = d;
   uint8_t est[ESTADO_BYTES];
   montaEstado(est, st, TAXA_HZ, f, d);
-  chEstado->setValue(est, ESTADO_BYTES);  // leitura (Read) sempre ve o valor atual
+  chEstado->setValue(est, ESTADO_BYTES);  // leitura (Read) sempre ve o valor atual imediatamente
   if (conectado && inscritoEstado) {
-    if (chEstado->notify(est, ESTADO_BYTES, connHandle)) forcaEstado = false;
+    ultimoRetryMs = agora;
+    forcaEstado = !chEstado->notify(est, ESTADO_BYTES, connHandle);  // se faltar buffer BLE, retenta
   } else {
     forcaEstado = false;
   }
@@ -555,10 +580,12 @@ void servicoNvs() {
 // Monitor Serial (bancada)
 // ======================================================================
 void mostraStatus() {
-  uint16_t st = statusBase;
+  uint16_t st = statusBase.load() | (satAtual.load() ? ST_SATURACAO : 0);
   Serial.printf("\nSAMBA firmware %s | protocolo v%u | %u Hz\n", FIRMWARE_VERSAO, PROTOCOLO_VERSAO, TAXA_HZ);
-  Serial.printf("  status 0x%04X:%s%s%s%s%s\n", st, st & ST_TARA ? " TARA" : "", st & ST_SEM_CAL ? " SEM_CAL" : "",
-                st & ST_ERRO_ADC ? " ERRO_ADC" : "", st & ST_MODO_BRUTO ? " BRUTO" : "", st & ST_AQUISICAO ? " AQUISICAO" : "");
+  Serial.printf("  status 0x%04X:%s%s%s%s%s%s\n", st, st & ST_SATURACAO ? " SATURACAO" : "",
+                st & ST_TARA ? " TARA" : "", st & ST_SEM_CAL ? " SEM_CAL" : "",
+                st & ST_ERRO_ADC ? " ERRO_ADC" : "", st & ST_MODO_BRUTO ? " BRUTO" : "",
+                st & ST_AQUISICAO ? " AQUISICAO" : "");
   Serial.printf("  fator %.7f mN/contagem (%s) | deslocamento %ld | AVDD %.3f V\n", (double)fator.load(),
                 temCalibracao ? "calibrado" : "NOMINAL da etiqueta", (long)deslocamento.load(), (double)avddV.load());
   Serial.printf("  amostras lidas %lu | perdidas no DRDY %lu | fila cheia %lu | fila agora %u\n", (unsigned long)nLidas.load(),
@@ -579,8 +606,23 @@ void mostraAjuda() {
 }
 
 void servicoSerial() {
-  if (!Serial.available()) return;
-  String l = Serial.readStringUntil('\n');
+  static String bufSerial;
+  String l;
+  bool temLinha = false;
+  while (Serial.available()) {
+    char ch = (char)Serial.read();
+    if (ch == '\n' || ch == '\r') {
+      if (bufSerial.length() > 0) {
+        l = bufSerial;
+        bufSerial = "";
+        temLinha = true;
+        break;
+      }
+    } else if (bufSerial.length() < 96) {
+      bufSerial += ch;
+    }
+  }
+  if (!temLinha) return;
   l.trim();
   l.toLowerCase();
   if (l.length() == 0) return;
@@ -612,9 +654,9 @@ void servicoLog() {
   if (!logLigado || millis() - ultimo < 200) return;
   ultimo = millis();
   int32_t b = ultimoBruto;
-  float n = (float)(b - deslocamento.load()) * fator.load() / 1000.0f;
-  Serial.printf("bruto %9ld | %10.2f N | %8.2f kg | status 0x%04X\n", (long)b, (double)n, (double)(n / G_PADRAO),
-                statusBase.load());
+  double n = (double)((int64_t)b - (int64_t)deslocamento.load()) * (double)fator.load() / 1000.0;
+  uint16_t st = statusBase.load() | (satAtual.load() ? ST_SATURACAO : 0);
+  Serial.printf("bruto %9ld | %10.2f N | %8.2f kg | status 0x%04X\n", (long)b, n, n / G_PADRAO, st);
 }
 
 // ======================================================================
@@ -637,10 +679,10 @@ void setup() {
 
   delay(50);  // alimentacoes estaveis antes de falar com o ADS (datasheet: >= 50 us)
   ads.begin(PINO_SCLK, PINO_MISO, PINO_MOSI, PINO_CS, PINO_DRDY, SPI_HZ);
+  attachInterrupt(PINO_DRDY, isrDrdy, FALLING);
 
   // Tarefa de aquisicao no nucleo 1 (o NimBLE roda no nucleo 0), prioridade alta.
   xTaskCreatePinnedToCore(tarefaAquisicao, "aquisicao", 6144, nullptr, configMAX_PRIORITIES - 2, &tarefaAq, 1);
-  attachInterrupt(PINO_DRDY, isrDrdy, FALLING);
 
   iniciaBle();
   Serial.printf("BLE: anunciando como \"%s\" (%s)\n", NOME_BLE, NimBLEDevice::getAddress().toString().c_str());

@@ -77,23 +77,23 @@ bool Ads1220::iniciar(const uint8_t regs[4]) {
 }
 
 float Ads1220::medeAvdd(const uint8_t regsNormais[4]) {
-  // Monitor (AVDD - AVSS)/4: ganho 1, PGA desligado, referencia interna 2,048 V.
+  // Monitor (AVDD - AVSS)/4: MUX 1101 usa automaticamente a referencia interna 2,048 V e PGA desligado.
   escreveReg(0, 0xD1);
-  escreveReg(2, 0x00);
   comando(CMD_START);
   leDado();  // limpa um DRDY pendente da configuracao anterior
-  bool ok = esperaDrdy(10);
+  bool ok = esperaDrdy(60);
   if (ok) leDado();  // descarta a 1a conversao
   int64_t soma = 0;
   int n = 0;
   for (int i = 0; ok && i < 4; i++) {
-    if (!esperaDrdy(10)) { ok = false; break; }
+    if (!esperaDrdy(60)) { ok = false; break; }
     soma += leDado();
     n++;
   }
   escreveReg(0, regsNormais[0]);
   escreveReg(2, regsNormais[2]);
   comando(CMD_START);
+  if (ok && esperaDrdy(60)) leDado();  // descarta a 1a conversao apos religar o PGA
   if (!ok || n == 0) return NAN;
   return (float)((double)soma / n / 8388608.0 * 2.048 * 4.0);
 }

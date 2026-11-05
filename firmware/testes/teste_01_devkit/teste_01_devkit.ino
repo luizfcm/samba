@@ -91,7 +91,8 @@ void testeMemoria() {
   Serial.println("\n== 2. Memoria ==");
   Serial.printf("  Heap interno livre: %lu bytes (maior bloco %lu)\n", (unsigned long)ESP.getFreeHeap(),
                 (unsigned long)ESP.getMaxAllocHeap());
-  size_t tam = ESP.getMaxAllocHeap() - 16 * 1024;  // deixa folga para o Wi-Fi e o BLE
+  size_t maxBloco = ESP.getMaxAllocHeap();
+  size_t tam = maxBloco > 16 * 1024 ? maxBloco - 16 * 1024 : 0;  // deixa folga para o Wi-Fi e o BLE
   if (tam > 160 * 1024) tam = 160 * 1024;
   uint32_t *p = (uint32_t *)heap_caps_malloc(tam, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   if (p) {
@@ -175,8 +176,9 @@ void testeBle() {
   chContador->setValue(contador);
   srv->start();
   NimBLEAdvertising *adv = NimBLEDevice::getAdvertising();
-  adv->setName("SAMBA-TESTE");
-  adv->addServiceUUID(UUID_SERVICO_TESTE);
+  adv->enableScanResponse(true);  // UUID (18 B) + flags (3 B) no anuncio; nome (13 B) no scan response
+  ok = ok && adv->addServiceUUID(UUID_SERVICO_TESTE);
+  ok = ok && adv->setName("SAMBA-TESTE");
   ok = ok && adv->start();
   Serial.printf("  Endereco BLE: %s\n", NimBLEDevice::getAddress().toString().c_str());
   resultado("BLE iniciou e esta anunciando como SAMBA-TESTE", ok);

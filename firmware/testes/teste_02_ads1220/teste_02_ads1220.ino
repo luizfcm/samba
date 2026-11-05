@@ -10,7 +10,10 @@
 
   Arduino IDE: placa "ESP32S3 Dev Module". Monitor Serial: 921600 baud, "Nova linha".
 
+  A leitura NAO fica rolando na tela: o Monitor Serial so mostra o que voce pedir.
   Comandos (digite e tecle Enter):
+    l        UMA leitura (media de 1 s): mV/V e kg
+    m        liga/desliga a leitura continua (5 linhas/s). Desligada ao ligar a placa
     t        tara (media de 2 s, celula sem carga)
     c 20     calibra com massa conhecida (kg) aplicada; mostra tambem o fator em mN/contagem
              e o deslocamento no formato do protocolo BLE v2 (para o firmware final)
@@ -63,12 +66,12 @@ const uint8_t REG2 = 0x40;
 // Registrador 3: aviso de dado pronto apenas no pino DRDY
 const uint8_t REG3 = 0x00;
 
-// Monitores (datasheet SBAS501, MUX[3:0]): medidos com ganho 1, PGA desligado e
-// referencia interna de 2,048 V. Resultado = tensao / 4.
-const uint8_t REG0_MON_REF  = 0xC1;  // MUX 1100: (V(REFPx) - V(REFNx)) / 4
+// Monitores (datasheet SBAS501B, secao 8.3.11): o ADS usa automaticamente a referencia
+// interna de 2,048 V e forca PGA desligado (ganho 1). Resultado = tensao / 4.
+// No MUX 1100, REG2 deve manter VREF=01 (0x40) para selecionar o par REFP0/REFN0.
+const uint8_t REG0_MON_REF  = 0xC1;  // MUX 1100: (V(REFP0) - V(REFN0)) / 4
 const uint8_t REG0_MON_AVDD = 0xD1;  // MUX 1101: (AVDD - AVSS) / 4
 const uint8_t REG0_CURTO    = 0xEE;  // MUX 1110: AINp = AINn = (AVDD+AVSS)/2, ganho 128
-const uint8_t REG2_REF_INT  = 0x00;  // referencia interna 2,048 V
 
 int mediaLinha() { return AMOSTRAS_POR_SEGUNDO >= 5 ? AMOSTRAS_POR_SEGUNDO / 5 : 1; }  // 5 linhas/s
 int mediaTara()  { return AMOSTRAS_POR_SEGUNDO * 2; }                                  // 2 s
@@ -87,6 +90,7 @@ SPISettings configSPI(spiHz, MSBFIRST, SPI_MODE1);  // modo SPI 1
 long tara = 0;
 float contagensPorKg = 0;  // 0 = ainda sem calibracao
 bool mostrarBruto = false;
+bool leituraContinua = false;  // comando m: so imprime sem parar se voce pedir
 int sinal = 1;             // +1 ou -1 (comando x)
 
 // ---------- Funcoes do ADS1220 ----------
@@ -228,7 +232,7 @@ void medeRuido(int n) {
 void monitores() {
   double m;
   Serial.println("Monitores internos do ADS1220 (referencia interna 2,048 V):");
-  if (adsMediaComConfig(REG0_MON_AVDD, REG1, REG2_REF_INT, 8, m)) {
+  if (adsMediaComConfig(REG0_MON_AVDD, REG1, REG2, 8, m)) {
     float avdd = m / FUNDO_ESCALA * 2.048 * 4.0;
     Serial.printf("  AVDD          = %.3f V  ", avdd);
     if (avdd < 1.0) Serial.println("-> AVDD AUSENTE: pack desligado/chave aberta. Leituras sem sentido.");
@@ -238,7 +242,7 @@ void monitores() {
   } else {
     Serial.println("  AVDD: sem DRDY.");
   }
-  if (adsMediaComConfig(REG0_MON_REF, REG1, REG2_REF_INT, 8, m)) {
+  if (adsMediaComConfig(REG0_MON_REF, REG1, REG2, 8, m)) {
     float vref = m / FUNDO_ESCALA * 2.048 * 4.0;
     Serial.printf("  REFP0 - REFN0 = %.3f V  ", vref);
     Serial.println(vref > 4.5 ? "-> OK (deve ficar a poucos mV do AVDD)" : "-> confira E+/REFP0 e o fio de referencia E-/REFN0 (5.3)");
@@ -397,6 +401,26 @@ void capturaCrua(float segundos) {
 }
 
 // ---------- Mensagens ----------
+void imprimeLeitura(long media) {
+  long liquido = media - tara;
+  float mvv = sinal * paraMvPorV(liquido);
+  if (mostrarBruto) Serial.printf("bruto %9ld | ", media);
+  if (contagensPorKg != 0) {
+    Serial.printf("%+.5f mV/V | %8.2f kg (calibrado)\n", mvv, kgDe(liquido));
+  } else {
+    Serial.printf("%+.5f mV/V | %8.1f kg (estimado pela etiqueta)\n", mvv, kgDe(liquido));
+  }
+}
+
+void leituraUnica() {
+  long v;
+  if (!adsLeAmostra(v, timeoutMs())) {  // confirma que o ADS esta vivo antes de fazer a media
+    Serial.println("Sem sinal no DRDY: confira o fio do DRDY (GPIO14) e a alimentacao do ADS.");
+    return;
+  }
+  imprimeLeitura(adsMedia(AMOSTRAS_POR_SEGUNDO));  // 1 s
+}
+
 void mostraRegistradores() {
   uint8_t regs[4];
   adsLeRegistradores(regs);
@@ -413,14 +437,32 @@ void mostraRegistradores() {
 
 void mostraAjuda() {
   Serial.println();
-  Serial.println("Comandos: t tara | c <kg> calibra | r bruto | i registradores | n ruido | f <SPS> taxa | s <seg> captura");
+  Serial.printf("Leitura continua: %s. Taxa atual: %d SPS. SPI: %lu MHz.\n", leituraContinua ? "LIGADA" : "desligada",
+                AMOSTRAS_POR_SEGUNDO, (unsigned long)(spiHz / 1000000));
+  Serial.println("Comandos: l 1 leitura | m leitura continua liga/desliga | t tara | c <kg> calibra | r bruto");
+  Serial.println("          i registradores | n ruido | f <SPS> taxa | s <seg> captura");
   Serial.println("          a AVDD/REF | z ruido do ADS | v teste DRDY | k <MHz> SPI | x inverte sinal | T temperatura");
   Serial.println();
 }
 
 void trataComando() {
-  if (!Serial.available()) return;
-  String linha = Serial.readStringUntil('\n');
+  static String bufSerial;
+  String linha;
+  bool temLinha = false;
+  while (Serial.available()) {
+    char ch = (char)Serial.read();
+    if (ch == '\n' || ch == '\r') {
+      if (bufSerial.length() > 0) {
+        linha = bufSerial;
+        bufSerial = "";
+        temLinha = true;
+        break;
+      }
+    } else if (bufSerial.length() < 80) {
+      bufSerial += ch;
+    }
+  }
+  if (!temLinha) return;
   linha.trim();
   if (linha.length() == 0) return;
   char c0 = linha.charAt(0);
@@ -451,8 +493,14 @@ void trataComando() {
                   1000.0 * G / contagensPorKg, tara);
     Serial.printf("  No firmware final, pelo Monitor Serial: cal %.7f %ld\n", 1000.0 * G / contagensPorKg, tara);
     Serial.println("  (o fator ja carrega o sinal: negativo = leitura invertida)");
+  } else if (c == 'l') {
+    leituraUnica();
+  } else if (c == 'm') {
+    leituraContinua = !leituraContinua;
+    Serial.printf("Leitura continua %s.\n", leituraContinua ? "LIGADA (digite m para parar)" : "desligada");
   } else if (c == 'r') {
     mostrarBruto = !mostrarBruto;
+    Serial.printf("Valor bruto %s nas leituras.\n", mostrarBruto ? "visivel" : "escondido");
   } else if (c == 'i') {
     mostraRegistradores();
   } else if (c == 'n') {
@@ -529,10 +577,16 @@ void loop() {
 
   static int64_t soma = 0;
   static int n = 0;
+  if (!leituraContinua) {  // modo silencioso: so responde aos comandos
+    soma = 0;
+    n = 0;
+    delay(5);
+    return;
+  }
   long v;
   if (!adsLeAmostra(v, 500)) {
-    Serial.println("Sem sinal no DRDY: confira o fio do DRDY (GPIO14) e a alimentacao do ADS.");
-    delay(1000);
+    Serial.println("Sem sinal no DRDY: confira o fio do DRDY (GPIO14) e a alimentacao do ADS. Leitura continua desligada.");
+    leituraContinua = false;
     return;
   }
   soma += v;
@@ -542,13 +596,5 @@ void loop() {
   long media = (long)(soma / n);
   soma = 0;
   n = 0;
-  long liquido = media - tara;
-  float mvv = sinal * paraMvPorV(liquido);
-
-  if (mostrarBruto) Serial.printf("bruto %9ld | ", media);
-  if (contagensPorKg != 0) {
-    Serial.printf("%+.5f mV/V | %8.2f kg (calibrado)\n", mvv, kgDe(liquido));
-  } else {
-    Serial.printf("%+.5f mV/V | %8.1f kg (estimado pela etiqueta)\n", mvv, kgDe(liquido));
-  }
+  imprimeLeitura(media);
 }
