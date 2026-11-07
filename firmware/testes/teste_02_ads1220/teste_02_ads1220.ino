@@ -14,6 +14,8 @@
   Comandos (digite e tecle Enter):
     l        UMA leitura (media de 1 s): mV/V e kg
     m        liga/desliga a leitura continua (5 linhas/s). Desligada ao ligar a placa
+    p        liga/desliga o modo GRAFICO para o Serial Plotter da IDE (Ferramentas > Plotter Serial):
+             imprime so "mV_V:<valor>" 20x/s. "p 10" ou "p 50" muda as linhas por segundo
     t        tara (media de 2 s, celula sem carga)
     c 20     calibra com massa conhecida (kg) aplicada; mostra tambem o fator em mN/contagem
              e o deslocamento no formato do protocolo BLE v2 (para o firmware final)
@@ -91,6 +93,8 @@ long tara = 0;
 float contagensPorKg = 0;  // 0 = ainda sem calibracao
 bool mostrarBruto = false;
 bool leituraContinua = false;  // comando m: so imprime sem parar se voce pedir
+bool modoGrafico = false;      // comando p: saida "mV_V:valor" para o Serial Plotter
+int linhasGrafico = 20;        // linhas por segundo no modo grafico
 int sinal = 1;             // +1 ou -1 (comando x)
 
 // ---------- Funcoes do ADS1220 ----------
@@ -439,7 +443,7 @@ void mostraAjuda() {
   Serial.println();
   Serial.printf("Leitura continua: %s. Taxa atual: %d SPS. SPI: %lu MHz.\n", leituraContinua ? "LIGADA" : "desligada",
                 AMOSTRAS_POR_SEGUNDO, (unsigned long)(spiHz / 1000000));
-  Serial.println("Comandos: l 1 leitura | m leitura continua liga/desliga | t tara | c <kg> calibra | r bruto");
+  Serial.println("Comandos: l 1 leitura | m leitura continua | p grafico (Serial Plotter) | t tara | c <kg> calibra | r bruto");
   Serial.println("          i registradores | n ruido | f <SPS> taxa | s <seg> captura");
   Serial.println("          a AVDD/REF | z ruido do ADS | v teste DRDY | k <MHz> SPI | x inverte sinal | T temperatura");
   Serial.println();
@@ -497,7 +501,23 @@ void trataComando() {
     leituraUnica();
   } else if (c == 'm') {
     leituraContinua = !leituraContinua;
+    modoGrafico = false;
     Serial.printf("Leitura continua %s.\n", leituraContinua ? "LIGADA (digite m para parar)" : "desligada");
+  } else if (c == 'p') {
+    int lps = linha.substring(1).toInt();
+    if (lps > 0) {
+      linhasGrafico = constrain(lps, 1, 100);
+      modoGrafico = true;
+    } else {
+      modoGrafico = !modoGrafico;
+    }
+    leituraContinua = false;
+    if (modoGrafico) {
+      Serial.printf("Modo grafico: %d pontos/s em mV/V. Abra Ferramentas > Plotter Serial. Digite p para sair.\n",
+                    linhasGrafico);
+    } else {
+      Serial.println("Modo grafico desligado.");
+    }
   } else if (c == 'r') {
     mostrarBruto = !mostrarBruto;
     Serial.printf("Valor bruto %s nas leituras.\n", mostrarBruto ? "visivel" : "escondido");
@@ -577,7 +597,7 @@ void loop() {
 
   static int64_t soma = 0;
   static int n = 0;
-  if (!leituraContinua) {  // modo silencioso: so responde aos comandos
+  if (!leituraContinua && !modoGrafico) {  // modo silencioso: so responde aos comandos
     soma = 0;
     n = 0;
     delay(5);
@@ -585,16 +605,22 @@ void loop() {
   }
   long v;
   if (!adsLeAmostra(v, 500)) {
-    Serial.println("Sem sinal no DRDY: confira o fio do DRDY (GPIO14) e a alimentacao do ADS. Leitura continua desligada.");
+    Serial.println("Sem sinal no DRDY: confira o fio do DRDY (GPIO14) e a alimentacao do ADS. Leitura desligada.");
     leituraContinua = false;
+    modoGrafico = false;
     return;
   }
   soma += v;
   n++;
-  if (n < mediaLinha()) return;  // 5 linhas por segundo, em qualquer taxa
+  int alvo = modoGrafico ? max(1, AMOSTRAS_POR_SEGUNDO / linhasGrafico) : mediaLinha();
+  if (n < alvo) return;
 
   long media = (long)(soma / n);
   soma = 0;
   n = 0;
-  imprimeLeitura(media);
+  if (modoGrafico) {
+    Serial.printf("mV_V:%.5f\n", sinal * paraMvPorV(media - tara));  // formato "rotulo:valor" do Serial Plotter
+  } else {
+    imprimeLeitura(media);
+  }
 }

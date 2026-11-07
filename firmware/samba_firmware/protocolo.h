@@ -22,6 +22,8 @@ constexpr uint8_t OP_SET_CALIBRACAO = 0x05;
 // Uso interno (Monitor Serial), nunca chega pelo BLE:
 constexpr uint8_t OP_INT_CALKG      = 0x80;  // calibra com massa conhecida
 constexpr uint8_t OP_INT_LIMPA_CAL  = 0x81;  // volta ao fator nominal
+constexpr uint8_t OP_INT_DIAG       = 0x82;  // registradores + AVDD + referencia (comando serial)
+constexpr uint8_t OP_INT_RUIDO      = 0x83;  // desvio padrao de 2 s de leituras (comando serial)
 
 struct Comando {
   uint8_t op;

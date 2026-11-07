@@ -9,6 +9,7 @@ Instalar:   python -m pip install bleak
 Exemplos:
   python samba_ble_cliente.py                         # 10 s de stream, mostra estatisticas
   python samba_ble_cliente.py --tara --segundos 30 --csv salto.csv
+  python samba_ble_cliente.py --tara --segundos 20 --ao-vivo --csv coleta.csv   # grafico ao vivo
   python samba_ble_cliente.py --bruto --segundos 5    # contagens cruas do ADC
   python samba_ble_cliente.py --calibrar-kg 20        # tara + massa conhecida -> SET_CALIBRACAO
   python samba_ble_cliente.py --cal 9.133 -12345 --segundos 0   # grava calibracao e sai
@@ -87,11 +88,13 @@ class Coletor:
         self.tamanhos = {}
         self.t_primeiro_pc = None
         self.estado = None
+        self.chegadas = []  # por pacote: (instante no PC em s, timestamp da ultima amostra em us, bytes)
+        self.mtu = getattr(self, "mtu", None)
 
     def zera(self):
-        est = self.estado
+        est, mtu = self.estado, self.mtu
         self.__init__()
-        self.estado = est
+        self.estado, self.mtu = est, mtu
 
     def on_medicao(self, _, dados: bytearray):
         agora = time.perf_counter()
@@ -111,6 +114,7 @@ class Coletor:
             self.perdidas += max(0, primeiro - self.ultimo_seq - 1)
         self.ultimo_seq = amostras[-1][0]
         self.amostras.extend(amostras)
+        self.chegadas.append((agora, amostras[-1][1], len(dados)))
 
     def on_estado(self, _, dados: bytearray):
         try:
@@ -161,12 +165,118 @@ class Coletor:
             print("       = media %.3f N (%.3f kg), ruido %.3f N" % (m / 1000, m / 1000 / G, dp / 1000))
         sts = sorted({x[3] for x in a})
         print("status vistos: %s" % ", ".join(nomes_status(s) for s in sts))
+        self.relatorio_ble()
+
+    def relatorio_ble(self):
+        """Desempenho do enlace: o que mostra que a transmissao em lotes esta otimizada."""
+        c = self.chegadas
+        if len(c) < 3:
+            return
+        dur = c[-1][0] - c[0][0]
+        if dur <= 0:
+            return
+        n_amostras = len(self.amostras)
+        bytes_tot = sum(x[2] for x in c)
+        media_cont = n_amostras / len(c)
+        ints = sorted((c[i + 1][0] - c[i][0]) * 1000 for i in range(len(c) - 1))
+        p95 = ints[int(0.95 * (len(ints) - 1))]
+        # atraso relativo: (chegada no PC) - (instante da ultima amostra no ESP), descontado o menor valor.
+        # Mostra quanto cada pacote esperou a mais que o pacote mais rapido (fila + intervalo de conexao).
+        t0_pc, t0_esp = c[0][0], c[0][1] / 1e6
+        atrasos = sorted((x[0] - t0_pc) - (x[1] / 1e6 - t0_esp) for x in c)
+        base = atrasos[0]
+        atr = [(v - base) * 1000 for v in atrasos]
+        util = 6 * n_amostras
+        print("\n----- Desempenho do BLE -----")
+        print("MTU negociado: %s | %.1f amostras por notificacao (maximo 20)" % (self.mtu, media_cont))
+        print("notificacoes por segundo: %.1f (sem lotes seriam %.0f, uma por amostra)"
+              % (len(c) / dur, n_amostras / dur))
+        print("vazao: %.2f kB/s de payload (%.2f kB/s so de amostras) | eficiencia do pacote %.1f %%"
+              % (bytes_tot / dur / 1000, util / dur / 1000, 100.0 * util / bytes_tot))
+        print("intervalo entre notificacoes no PC: medio %.1f ms, 95%% abaixo de %.1f ms, maximo %.1f ms"
+              % (sum(ints) / len(ints), p95, ints[-1]))
+        print("atraso extra por pacote (em relacao ao mais rapido): mediana %.1f ms, 95%% abaixo de %.1f ms, max %.1f ms"
+              % (atr[len(atr) // 2], atr[int(0.95 * (len(atr) - 1))], atr[-1]))
 
 
-async def comando(cliente, *dados, rotulo=""):
-    await cliente.write_gatt_char(UUID_CONTROLE, bytes(dados), response=True)
-    if rotulo:
-        print("-> %s" % rotulo)
+MVV_POR_CONTAGEM = 1000.0 / (8388608 * 128)  # ganho 128, medicao ratiometrica
+
+
+def para_mvv(amostra, fator):
+    """mV/V da ponte a partir de uma amostra (seq, t_us, valor, status).
+    Modo bruto: contagens do ADC. Normal: mN -> contagens pelo fator do Estado (tara ja descontada)."""
+    _, _, valor, status = amostra
+    if status & (1 << 4):
+        return valor * MVV_POR_CONTAGEM
+    if not fator:
+        return float("nan")
+    # |fator|: se a calibracao inverteu o sinal (fator < 0), o grafico segue o sinal ja corrigido, igual ao firmware
+    return valor / abs(fator) * MVV_POR_CONTAGEM
+
+
+async def ao_vivo(col, segundos, janela=5.0):
+    """Grafico em tempo real das amostras que chegam pelo BLE."""
+    import matplotlib.pyplot as plt
+    plt.ion()
+    fig, ax = plt.subplots(figsize=(10, 4.5))
+    linha, = ax.plot([], [], lw=0.8, color="#1f5fa8")
+    ax.set_xlim(-janela, 0)
+    ax.set_xlabel("tempo (s)")
+    ax.set_ylabel("saida da ponte (mV/V)")
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
+    fim = time.perf_counter() + segundos
+    n_janela = int(janela * 1100)
+    while time.perf_counter() < fim and plt.fignum_exists(fig.number):
+        a = col.amostras[-n_janela:]
+        if len(a) > 1:
+            fator = col.estado["fator"] if col.estado else None
+            t_ult = a[-1][1]
+            x = [(s[1] - t_ult) / 1e6 for s in a]
+            y = [para_mvv(s, fator) for s in a]
+            linha.set_data(x, y)
+            lo, hi = min(y), max(y)
+            meio, meia = (lo + hi) / 2, max((hi - lo) / 2 * 1.15, 0.002)  # escala minima: o ruido nao parece enorme
+            ax.set_ylim(meio - meia, meio + meia)
+            ax.set_title("SAMBA via BLE | %d amostras | %d pacotes | %d perdidas | MTU %s"
+                         % (len(col.amostras), col.pacotes, col.perdidas, col.mtu))
+            fig.canvas.draw_idle()
+        fig.canvas.flush_events()
+        await asyncio.sleep(0.05)  # devolve o controle ao bleak para receber as notificacoes
+    restante = fim - time.perf_counter()
+    if restante > 0:  # janela fechada antes do fim: continua coletando sem grafico
+        await asyncio.sleep(restante)
+    return fig
+
+
+async def progresso(col, segundos):
+    """Uma linha por segundo durante a coleta: mostra na hora se os pacotes estao chegando."""
+    inicio = time.perf_counter()
+    fim = inicio + segundos
+    ant = 0
+    while time.perf_counter() < fim:
+        await asyncio.sleep(min(1.0, max(0.0, fim - time.perf_counter())))
+        n = len(col.amostras)
+        print("  %5.1f s | %6d amostras (+%4d/s) | %5d pacotes | perdidas %d | erros de formato %d"
+              % (time.perf_counter() - inicio, n, n - ant, col.pacotes, col.perdidas, col.erros))
+        ant = n
+
+
+async def comando(cliente, *dados, rotulo="", tentativas=5):
+    """Escreve no Controle. Se a placa responder com erro (ex.: 0x11 Insufficient Resource quando o
+    radio esta congestionado), tenta de novo; na ultima, usa escrita sem resposta. Retorna True/False."""
+    ultimo_erro = None
+    for i in range(tentativas):
+        try:
+            await cliente.write_gatt_char(UUID_CONTROLE, bytes(dados), response=(i < tentativas - 1))
+            if rotulo:
+                print("-> %s%s" % (rotulo, "" if i == 0 else " (na tentativa %d)" % (i + 1)))
+            return True
+        except Exception as e:  # BleakGATTProtocolError, BleakError...
+            ultimo_erro = e
+            await asyncio.sleep(0.2)
+    print("AVISO: comando %s falhou %d vezes: %s" % (rotulo or bytes(dados).hex(), tentativas, ultimo_erro))
+    return False
 
 
 async def entrada(msg):
@@ -190,6 +300,7 @@ async def principal(args):
     col = Coletor()
     async with BleakClient(dispositivo) as cli:
         print("Conectado. MTU = %d (precisa de >= 139 para 20 amostras/pacote)" % cli.mtu_size)
+        col.mtu = cli.mtu_size
         col.estado = decodifica_estado(bytes(await cli.read_gatt_char(UUID_ESTADO)))
         mostra_estado(col.estado, "[Estado lido]")
         await cli.start_notify(UUID_ESTADO, col.on_estado)
@@ -211,8 +322,14 @@ async def principal(args):
                 await asyncio.sleep(1.5)
             col.zera()
             await comando(cli, OP_START, rotulo="START (%g s)" % args.segundos)
-            await asyncio.sleep(args.segundos)
-            await comando(cli, OP_STOP, rotulo="STOP")
+            fig = None
+            try:
+                if args.ao_vivo:
+                    fig = await ao_vivo(col, args.segundos)
+                else:
+                    await progresso(col, args.segundos)
+            finally:
+                await comando(cli, OP_STOP, rotulo="STOP")  # mesmo se o grafico der erro ou Ctrl+C
             await asyncio.sleep(0.5)  # recebe o ultimo pacote
             if args.bruto:
                 await comando(cli, OP_MODO_BRUTO, 0)
@@ -220,9 +337,18 @@ async def principal(args):
             if args.csv:
                 with open(args.csv, "w", newline="") as fp:
                     w = csv.writer(fp)
-                    w.writerow(["sequencia", "timestamp_us", "valor", "status"])
-                    w.writerows(col.amostras)
-                print("CSV gravado: %s (valor em mN, ou contagens se o bit 4 do status estiver ligado)" % args.csv)
+                    w.writerow(["sequencia", "timestamp_us", "valor", "status", "mV_por_V"])
+                    fator = col.estado["fator"] if col.estado else None
+                    for s in col.amostras:
+                        w.writerow(list(s) + ["%.7f" % para_mvv(s, fator)])
+                print("CSV gravado: %s (valor em mN, ou contagens se o bit 4 do status estiver ligado; "
+                      "mV_por_V = saida da ponte)" % args.csv)
+            if fig is not None:
+                import matplotlib.pyplot as plt
+                if plt.fignum_exists(fig.number):
+                    print("Feche a janela do grafico para terminar.")
+                    plt.ioff()
+                    plt.show()
     return 0
 
 
@@ -266,6 +392,8 @@ def argumentos():
     p.add_argument("--tara", action="store_true", help="manda TARE antes do START")
     p.add_argument("--bruto", type=int, choices=[0, 1], default=0, nargs="?", const=1, help="modo bruto")
     p.add_argument("--csv", help="arquivo CSV de saida")
+    p.add_argument("--ao-vivo", action="store_true",
+                   help="grafico em tempo real (mV/V) durante a coleta; precisa de matplotlib")
     p.add_argument("--cal", nargs=2, type=float, metavar=("FATOR", "DESLOCAMENTO"), help="SET_CALIBRACAO")
     p.add_argument("--calibrar-kg", type=float, help="calibra com massa conhecida (interativo)")
     return p.parse_args()

@@ -76,9 +76,13 @@ bool Ads1220::iniciar(const uint8_t regs[4]) {
   return ok;
 }
 
-float Ads1220::medeAvdd(const uint8_t regsNormais[4]) {
-  // Monitor (AVDD - AVSS)/4: MUX 1101 usa automaticamente a referencia interna 2,048 V e PGA desligado.
-  escreveReg(0, 0xD1);
+float Ads1220::medeAvdd(const uint8_t regsNormais[4]) { return medeMonitor(0xD1, regsNormais); }
+
+float Ads1220::medeMonitor(uint8_t reg0Monitor, const uint8_t regsNormais[4]) {
+  // Monitores (SBAS501B 8.3.11): MUX 1101 = (AVDD-AVSS)/4 e MUX 1100 = (REFPx-REFNx)/4.
+  // O ADS usa sozinho a referencia interna de 2,048 V e desliga o PGA; o REG2 continua
+  // selecionando o par REFP0/REFN0 (VREF = 01) para o monitor de referencia.
+  escreveReg(0, reg0Monitor);
   comando(CMD_START);
   leDado();  // limpa um DRDY pendente da configuracao anterior
   bool ok = esperaDrdy(60);

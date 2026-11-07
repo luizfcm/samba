@@ -29,6 +29,11 @@
 #include <atomic>
 #include <Preferences.h>
 #include <NimBLEDevice.h>
+#ifdef USING_NIMBLE_ARDUINO_HEADERS  // os_msys_num_free(): buffers livres da pilha NimBLE (12 de 256 B)
+#include "nimble/porting/nimble/include/os/os_mbuf.h"
+#else
+#include "os/os_mbuf.h"
+#endif
 #include "esp_timer.h"
 #include "esp_task_wdt.h"
 #include "config.h"
@@ -73,8 +78,20 @@ NimBLECharacteristic *chMedicao = nullptr, *chControle = nullptr, *chEstado = nu
 std::atomic<bool> conectado{false}, inscritoMedicao{false}, inscritoEstado{false}, forcaEstado{true};
 std::atomic<uint16_t> connHandle{0}, mtuAtual{23};
 std::atomic<uint32_t> nPacotes{0}, nPacotesDescartados{0}, nFalhasNotify{0}, nAmostrasSemMtu{0};
+std::atomic<uint32_t> nEsperaBuffer{0};      // vezes em que o envio esperou para preservar a reserva de buffers
+std::atomic<int> mbufMinimo{99};             // menor numero de buffers livres visto (diagnostico do enlace)
+std::atomic<uint16_t> connIntervalo{0};      // unidades de 1,25 ms (o que o central aceitou de fato)
+std::atomic<uint8_t> phyTx{1}, phyRx{1};     // 1 = 1M, 2 = 2M
 
 bool logLigado = false;
+
+// Modo grafico (Serial Plotter): a tarefa acumula, o loop() imprime a media
+portMUX_TYPE muxGraf = portMUX_INITIALIZER_UNLOCKED;
+std::atomic<bool> graficoLigado{false};
+int64_t grafSoma = 0;
+uint32_t grafN = 0;
+uint32_t pontosGrafico = 20;  // pontos por segundo
+constexpr double MVV_POR_CONTAGEM = 1000.0 / (8388608.0 * ADS_GANHO);  // ganho 128, ratiometrico
 
 // ======================================================================
 // ISR do DRDY
@@ -98,7 +115,8 @@ void enviaComando(uint8_t op, uint8_t u8 = 0, float f = 0, int32_t i32 = 0) {
 // ======================================================================
 // Tarefa de aquisicao
 // ======================================================================
-enum class Media : uint8_t { NENHUMA, TARA, CALKG };
+enum class Media : uint8_t { NENHUMA, TARA, CALKG, RUIDO };
+constexpr uint32_t RUIDO_AMOSTRAS = 2000;  // 2 s a 1000 Hz
 
 struct EstadoAq {
   bool erroRegs = false, erroDrdy = false, erroTravado = false, avddBaixa = false;
@@ -111,6 +129,8 @@ struct EstadoAq {
   Media media = Media::NENHUMA;
   int64_t somaMedia = 0;
   uint32_t nMedia = 0;
+  int32_t refRuido = 0;      // 1a amostra do ruido (subtraida para nao perder precisao)
+  double soma2Ruido = 0;
   float massaKg = 0;
 };
 EstadoAq aq;
@@ -156,6 +176,42 @@ void reiniciaAds() {
   ressincroniza();
 }
 
+// Autodiagnostico de bancada (roda na tarefa de aquisicao, dona do SPI).
+// Interrompe a conversao por ~20 ms; durante o START isso vira salto de sequencia, por isso so roda parado.
+void diagnostico() {
+  if (rodando) {
+    Serial.println("[DIAG] pare a aquisicao (stop) antes do diagnostico");
+    return;
+  }
+  uint8_t r[4];
+  ads.leRegs(r);
+  bool regsOk = memcmp(r, REGS_ADS, 4) == 0;
+  int errosSpi = 0;  // 500 leituras seguidas na velocidade de producao: pega fio ruim / SPI rapido demais
+  for (int i = 0; i < 500; i++) {
+    uint8_t q[4];
+    ads.leRegs(q);
+    if (memcmp(q, REGS_ADS, 4) != 0) errosSpi++;
+  }
+  float avdd = ads.medeMonitor(0xD1, REGS_ADS);
+  float ref = ads.medeMonitor(0xC1, REGS_ADS);
+  avddV = avdd;
+  Serial.println("\n[DIAG] ===== Autodiagnostico do ADS1220 =====");
+  Serial.printf("[DIAG] registradores %02X %02X %02X %02X (esperado %02X %02X %02X %02X) -> %s\n", r[0], r[1], r[2], r[3],
+                REGS_ADS[0], REGS_ADS[1], REGS_ADS[2], REGS_ADS[3], regsOk ? "SPI OK" : "ERRO");
+  Serial.printf("[DIAG] SPI %lu MHz: %d erro(s) em 500 leituras dos registradores -> %s\n",
+                (unsigned long)(SPI_HZ / 1000000), errosSpi,
+                errosSpi == 0 ? "OK" : "use SPI_HZ = 1000000 no config.h e confira os fios do SPI");
+  Serial.printf("[DIAG] taxa configurada %u SPS | ganho %.0f | medicao ratiometrica (REFP0 = E+)\n", TAXA_HZ,
+                (double)ADS_GANHO);
+  Serial.printf("[DIAG] AVDD (excitacao da celula, medida pelo ADS) = %.3f V -> %s\n", (double)avdd,
+                isnan(avdd) ? "sem resposta" : (avdd < AVDD_MINIMA_V ? "BAIXA" : (avdd > 5.5f ? "ACIMA DO MAXIMO" : "OK")));
+  Serial.printf("[DIAG] REFP0-REFN0 (referencia, ligacao Kelvin) = %.3f V -> %s\n", (double)ref,
+                isnan(ref) ? "sem resposta" : (fabsf(ref - avdd) < 0.05f ? "OK (igual ao AVDD)" : "confira E+/E- e REFP0/REFN0"));
+  Serial.printf("[DIAG] amostras lidas %lu | perdidas no DRDY %lu\n\n", (unsigned long)nLidas.load(),
+                (unsigned long)nPerdidasDrdy.load());
+  ressincroniza();
+}
+
 void aplicaCalibracao(float f, int32_t d, bool valida) {
   fator = valida ? f : FATOR_NOMINAL;
   deslocamento = d;
@@ -181,15 +237,22 @@ void processaComando(const Comando &c) {
       break;
     case OP_TARE:
     case OP_INT_CALKG:
+    case OP_INT_RUIDO:
       if (aq.media != Media::NENHUMA) {
         Serial.println("[CMD] ja ha uma media em andamento; comando ignorado");
         break;
       }
-      aq.media = (c.op == OP_TARE) ? Media::TARA : Media::CALKG;
+      aq.media = (c.op == OP_TARE) ? Media::TARA : (c.op == OP_INT_CALKG) ? Media::CALKG : Media::RUIDO;
       aq.massaKg = c.f;
       aq.somaMedia = 0;
       aq.nMedia = 0;
-      Serial.println(c.op == OP_TARE ? "[CMD] TARE: mantenha a celula parada..." : "[CMD] CALKG: mantenha a massa parada...");
+      aq.soma2Ruido = 0;
+      Serial.println(c.op == OP_TARE       ? "[CMD] TARE: mantenha a celula parada..."
+                     : c.op == OP_INT_CALKG ? "[CMD] CALKG: mantenha a massa parada..."
+                                            : "[CMD] RUIDO: 2 s de leituras, nao toque na celula...");
+      break;
+    case OP_INT_DIAG:
+      diagnostico();
       break;
     case OP_MODO_BRUTO:
       modoBruto = c.u8 != 0;
@@ -214,6 +277,19 @@ void processaComando(const Comando &c) {
 
 void terminaMedia() {
   int32_t media = (int32_t)llround((double)aq.somaMedia / aq.nMedia);
+  if (aq.media == Media::RUIDO) {
+    double n = aq.nMedia;
+    double m = (double)aq.somaMedia / n;  // somaMedia guarda (bruto - refRuido)
+    double var = (aq.soma2Ruido - n * m * m) / (n - 1);
+    double dp = sqrt(var > 0 ? var : 0);
+    double dpN = dp * fabs((double)fator.load()) / 1000.0;
+    Serial.printf("[RUIDO] %u amostras a %u Hz: desvio padrao %.1f contagens RMS = %.6f mV/V = %.2f uV/V\n",
+                  (unsigned)aq.nMedia, TAXA_HZ, dp, dp * MVV_POR_CONTAGEM, dp * MVV_POR_CONTAGEM * 1000.0);
+    Serial.printf("[RUIDO] = %.3f N RMS (%.3f kg) com o fator %s | pico a pico ~%.0f contagens\n", dpN, dpN / G_PADRAO,
+                  temCalibracao ? "calibrado" : "NOMINAL da etiqueta (estimativa)", dp * 6.6);
+    aq.media = Media::NENHUMA;
+    return;
+  }
   if (aq.media == Media::TARA) {
     deslocamento = media;
     salvarPendente = true;
@@ -295,6 +371,12 @@ void tarefaAquisicao(void *) {
     if (c2 != c1) continue;
     nLidas++;
     ultimoBruto = bruto;
+    if (graficoLigado) {
+      portENTER_CRITICAL(&muxGraf);
+      grafSoma += bruto;
+      grafN++;
+      portEXIT_CRITICAL(&muxGraf);
+    }
 
     // --- Diagnosticos por amostra ---
     aq.iguais = (bruto == aq.anterior) ? aq.iguais + 1 : 0;
@@ -311,6 +393,13 @@ void tarefaAquisicao(void *) {
       if (sat || aq.erroRegs || aq.erroTravado || aq.avddBaixa) {
         Serial.println("[MEDIA] cancelada: saturacao ou erro no ADC. Deslocamento mantido.");
         aq.media = Media::NENHUMA;
+      } else if (aq.media == Media::RUIDO) {
+        if (aq.nMedia == 0) aq.refRuido = bruto;
+        double d = (double)((int64_t)bruto - aq.refRuido);
+        aq.somaMedia += (int64_t)bruto - aq.refRuido;
+        aq.soma2Ruido += d * d;
+        aq.nMedia++;
+        if (aq.nMedia >= RUIDO_AMOSTRAS) terminaMedia();
       } else {
         aq.somaMedia += bruto;
         aq.nMedia++;
@@ -349,7 +438,20 @@ class CbServidor : public NimBLEServerCallbacks {
     conectado = true;
     s->updateConnParams(info.getConnHandle(), CONN_INT_MIN, CONN_INT_MAX, CONN_LATENCIA, CONN_TIMEOUT);
     s->setDataLen(info.getConnHandle(), 251);
-    Serial.printf("[BLE] conectado: %s\n", info.getAddress().toString().c_str());
+    connIntervalo = info.getConnInterval();
+    mbufMinimo = 99;
+    Serial.printf("[BLE] conectado: %s | intervalo inicial %.2f ms\n", info.getAddress().toString().c_str(),
+                  info.getConnInterval() * 1.25);
+  }
+  void onConnParamsUpdate(NimBLEConnInfo &info) override {
+    connIntervalo = info.getConnInterval();
+    Serial.printf("[BLE] parametros de conexao: intervalo %.2f ms, latencia %u, timeout %u ms\n",
+                  info.getConnInterval() * 1.25, info.getConnLatency(), info.getConnTimeout() * 10);
+  }
+  void onPhyUpdate(NimBLEConnInfo &, uint8_t tx, uint8_t rx) override {
+    phyTx = tx;
+    phyRx = rx;
+    Serial.printf("[BLE] PHY: tx %uM, rx %uM\n", tx, rx);
   }
   void onDisconnect(NimBLEServer *, NimBLEConnInfo &, int motivo) override {
     conectado = false;
@@ -405,6 +507,9 @@ class CbInscricao : public NimBLECharacteristicCallbacks {
 void iniciaBle() {
   NimBLEDevice::init(NOME_BLE);
   NimBLEDevice::setMTU(MTU_PREFERIDO);
+  // Aceita PHY 2M (dobro da taxa do radio) quando o central suporta; senao continua em 1M.
+  NimBLEDevice::setDefaultPhy(BLE_GAP_LE_PHY_1M_MASK | BLE_GAP_LE_PHY_2M_MASK,
+                              BLE_GAP_LE_PHY_1M_MASK | BLE_GAP_LE_PHY_2M_MASK);
   NimBLEDevice::setPower(9);  // dBm
   srv = NimBLEDevice::createServer();
   srv->setCallbacks(new CbServidor());
@@ -437,13 +542,19 @@ bool enviaPacote(const MontadorPacote &p) {
     nPacotesDescartados++;
     return true;
   }
-  if (chMedicao->notify(p.buf, p.tamanho(), connHandle)) {
-    nPacotes++;
-    falhandoDesde = 0;
-    return true;
+  int livres = os_msys_num_free();
+  if (livres < mbufMinimo) mbufMinimo = livres;
+  if (livres > RESERVA_BUFFERS_BLE) {
+    if (chMedicao->notify(p.buf, p.tamanho(), connHandle)) {
+      nPacotes++;
+      falhandoDesde = 0;
+      return true;
+    }
+    nFalhasNotify++;
+  } else {
+    nEsperaBuffer++;  // radio atrasado: guarda a reserva para os comandos e tenta de novo
   }
-  // Sem buffer na pilha BLE (radio atrasado): tenta de novo; a fila de 2 s absorve.
-  nFalhasNotify++;
+  // Sem buffer na pilha BLE: tenta de novo; a fila de 2 s absorve.
   uint32_t agora = millis();
   if (falhandoDesde == 0) falhandoDesde = agora;
   if (agora - falhandoDesde > 500) {  // conexao ruim de verdade: desiste deste pacote
@@ -590,11 +701,22 @@ void mostraStatus() {
                 temCalibracao ? "calibrado" : "NOMINAL da etiqueta", (long)deslocamento.load(), (double)avddV.load());
   Serial.printf("  amostras lidas %lu | perdidas no DRDY %lu | fila cheia %lu | fila agora %u\n", (unsigned long)nLidas.load(),
                 (unsigned long)nPerdidasDrdy.load(), (unsigned long)nFilaCheia.load(), (unsigned)uxQueueMessagesWaiting(filaAmostras));
+  static uint32_t ultN = 0, ultMs = 0;
+  uint32_t n = nLidas.load(), agora = millis();
+  if (ultMs != 0 && agora - ultMs >= 1000)
+    Serial.printf("  taxa medida desde o ultimo status: %.1f amostras/s (em %.1f s)\n",
+                  (double)(n - ultN) * 1000.0 / (double)(agora - ultMs), (double)(agora - ultMs) / 1000.0);
+  ultN = n;
+  ultMs = agora;
   Serial.printf("  BLE %s | MTU %u | Medicao %s | Estado %s\n", conectado ? "conectado" : "anunciando", mtuAtual.load(),
                 inscritoMedicao ? "assinada" : "-", inscritoEstado ? "assinado" : "-");
-  Serial.printf("  pacotes enviados %lu | descartados %lu | notify sem buffer %lu | amostras sem MTU %lu\n\n",
+  Serial.printf("  pacotes enviados %lu | descartados %lu | notify sem buffer %lu | amostras sem MTU %lu\n",
                 (unsigned long)nPacotes.load(), (unsigned long)nPacotesDescartados.load(), (unsigned long)nFalhasNotify.load(),
                 (unsigned long)nAmostrasSemMtu.load());
+  Serial.printf("  enlace: intervalo %.2f ms | PHY tx %uM rx %uM | buffers BLE livres agora %d (minimo %d, reserva %d) | "
+                "esperas por buffer %lu\n\n",
+                connIntervalo.load() * 1.25, phyTx.load(), phyRx.load(), os_msys_num_free(), mbufMinimo.load(),
+                RESERVA_BUFFERS_BLE, (unsigned long)nEsperaBuffer.load());
 }
 
 void mostraAjuda() {
@@ -602,7 +724,11 @@ void mostraAjuda() {
   Serial.println("  status | log | start | stop | tara | bruto 0/1");
   Serial.println("  cal <fator_mN_por_contagem> <deslocamento>   (ex.: cal 9.1330000 -12345)");
   Serial.println("  calkg <kg>   calibra com massa conhecida (faca 'tara' sem carga antes)");
-  Serial.println("  limpacal     apaga a calibracao (volta ao fator nominal da etiqueta)\n");
+  Serial.println("  limpacal     apaga a calibracao (volta ao fator nominal da etiqueta)");
+  Serial.println("Diagnostico de bancada:");
+  Serial.println("  diag         registradores, AVDD e referencia medidos pelo proprio ADS (com a aquisicao parada)");
+  Serial.println("  ruido        desvio padrao de 2 s de leituras (celula parada)");
+  Serial.println("  grafico [n]  saida 'mV_V:valor' para o Plotter Serial (n pontos/s, padrao 20). 'grafico' de novo sai\n");
 }
 
 void servicoSerial() {
@@ -632,7 +758,31 @@ void servicoSerial() {
   arg.trim();
 
   if (cmd == "status" || cmd == "?") mostraStatus();
-  else if (cmd == "log") { logLigado = !logLigado; Serial.printf("log %s\n", logLigado ? "ligado (5 linhas/s)" : "desligado"); }
+  else if (cmd == "log") {
+    logLigado = !logLigado;
+    graficoLigado = false;
+    Serial.printf("log %s\n", logLigado ? "ligado (5 linhas/s)" : "desligado");
+  } else if (cmd == "diag") enviaComando(OP_INT_DIAG);
+  else if (cmd == "ruido") enviaComando(OP_INT_RUIDO);
+  else if (cmd == "grafico" || cmd == "g") {
+    int pps = arg.toInt();
+    if (pps > 0) {
+      pontosGrafico = constrain(pps, 1, 100);
+      graficoLigado = true;
+    } else {
+      graficoLigado = !graficoLigado;
+    }
+    logLigado = false;
+    portENTER_CRITICAL(&muxGraf);
+    grafSoma = 0;
+    grafN = 0;
+    portEXIT_CRITICAL(&muxGraf);
+    if (graficoLigado)
+      Serial.printf("grafico ligado: %lu pontos/s em mV/V (tara atual descontada). Abra o Plotter Serial.\n",
+                    (unsigned long)pontosGrafico);
+    else
+      Serial.println("grafico desligado");
+  }
   else if (cmd == "start") enviaComando(OP_START);
   else if (cmd == "stop") enviaComando(OP_STOP);
   else if (cmd == "tara" || cmd == "t") enviaComando(OP_TARE);
@@ -657,6 +807,25 @@ void servicoLog() {
   double n = (double)((int64_t)b - (int64_t)deslocamento.load()) * (double)fator.load() / 1000.0;
   uint16_t st = statusBase.load() | (satAtual.load() ? ST_SATURACAO : 0);
   Serial.printf("bruto %9ld | %10.2f N | %8.2f kg | status 0x%04X\n", (long)b, n, n / G_PADRAO, st);
+}
+
+void servicoGrafico() {
+  static uint32_t ultimo = 0;
+  if (!graficoLigado) return;
+  uint32_t agora = millis();
+  if (agora - ultimo < 1000 / pontosGrafico) return;
+  ultimo = agora;
+  portENTER_CRITICAL(&muxGraf);
+  int64_t s = grafSoma;
+  uint32_t n = grafN;
+  grafSoma = 0;
+  grafN = 0;
+  portEXIT_CRITICAL(&muxGraf);
+  if (n == 0) return;
+  double media = (double)s / n - (double)deslocamento.load();
+  // fator negativo (sinal invertido pela calibracao) tambem inverte o grafico
+  double sinal = fator.load() < 0 ? -1.0 : 1.0;
+  Serial.printf("mV_V:%.5f\n", sinal * media * MVV_POR_CONTAGEM);
 }
 
 // ======================================================================
@@ -695,4 +864,5 @@ void loop() {
   servicoNvs();
   servicoSerial();
   servicoLog();
+  servicoGrafico();
 }

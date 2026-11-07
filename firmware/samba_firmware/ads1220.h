@@ -18,6 +18,8 @@ class Ads1220 {
   // Mede AVDD (monitor MUX=1101) em volts com referencia interna e restaura a configuracao.
   // Interrompe a conversao continua por ~8 ms. Retorna NAN se o DRDY nao responder.
   float medeAvdd(const uint8_t regsNormais[4]);
+  // Mesmo procedimento para qualquer monitor: 0xD1 = AVDD, 0xC1 = REFP0-REFN0. Resultado em volts.
+  float medeMonitor(uint8_t reg0Monitor, const uint8_t regsNormais[4]);
 
   static constexpr uint8_t CMD_RESET = 0x06;
   static constexpr uint8_t CMD_START = 0x08;

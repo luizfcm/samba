@@ -46,6 +46,9 @@ constexpr size_t   FILA_AMOSTRAS       = 2048;  // ~2 s de folga a 1000 Hz se o 
 constexpr uint32_t PACOTE_MAX_ESPERA_MS = 60;   // envia pacote incompleto se ficar parado esse tempo
 constexpr uint16_t MTU_PREFERIDO       = 247;
 constexpr uint32_t ESTADO_INTERVALO_MS = 100;   // notifica Estado no maximo 10x/s
+// Reserva de buffers da pilha NimBLE (12 x 256 B): a Medicao so notifica com mais que isto livre, para a
+// resposta de um comando (ex.: STOP) nao falhar com ATT 0x11 (Insufficient Resources).
+constexpr int      RESERVA_BUFFERS_BLE = 4;
 
 // Parametros de conexao pedidos ao celular (unidades de 1,25 ms; timeout em 10 ms).
 // 15-30 ms atende as regras do iOS e do Android.
