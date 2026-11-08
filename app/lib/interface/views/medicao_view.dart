@@ -3,6 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../funcionalidades/medicao/aplicacao/controlador_medicao.dart';
+import '../../funcionalidades/medicao/aplicacao/serie_simulada.dart';
+import '../../funcionalidades/medicao/dominio/exercicio.dart';
+import '../../nucleo/aquisicao/fonte_forca_simulada.dart';
 import '../core/app_colors.dart';
 
 class MedicaoView extends StatefulWidget {
@@ -13,21 +17,45 @@ class MedicaoView extends StatefulWidget {
 }
 
 class _MedicaoViewState extends State<MedicaoView> {
-  int _segundos = 0;
   Timer? _timer;
+  ControladorMedicao? _controlador;
+  bool _finalizando = false;
 
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() => _segundos++);
+    _timer = Timer.periodic(const Duration(milliseconds: 200), (timer) {
+      setState(() {});
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_controlador != null) return;
+
+    final exercicio = ModalRoute.of(context)!.settings.arguments as Exercicio;
+    final controlador = ControladorMedicao(
+      fonte: FonteForcaSimulada(forcasN: serieSimulada(exercicio)),
+    );
+    _controlador = controlador;
+    controlador.iniciar(exercicio);
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _controlador?.dispose();
     super.dispose();
+  }
+
+  Future<void> _finalizar() async {
+    if (_finalizando) return;
+    _finalizando = true;
+    _timer?.cancel();
+    final sessao = await _controlador!.finalizar();
+    if (!mounted) return;
+    Navigator.pushReplacementNamed(context, '/resultado', arguments: sessao);
   }
 
   String _formatarTempo(int segundosTotal) {
@@ -103,7 +131,9 @@ class _MedicaoViewState extends State<MedicaoView> {
                 ),
                 child: Center(
                   child: Text(
-                    _formatarTempo(_segundos),
+                    _formatarTempo(
+                      (_controlador?.sessao?.duracaoDadosS ?? 0).floor(),
+                    ),
                     style: const TextStyle(
                       color: AppColors.azulEscuro,
                       fontSize: 48,
@@ -123,6 +153,11 @@ class _MedicaoViewState extends State<MedicaoView> {
               fontWeight: FontWeight.w500,
             ),
           ),
+          const SizedBox(height: 8),
+          Text(
+            '${_controlador?.sessao?.quantidadeAmostras ?? 0} amostras recebidas',
+            style: const TextStyle(color: AppColors.cinza, fontSize: 14),
+          ),
           const Spacer(),
           SizedBox(
             width: double.infinity,
@@ -134,10 +169,7 @@ class _MedicaoViewState extends State<MedicaoView> {
                 elevation: 0,
                 shape: const StadiumBorder(),
               ),
-              onPressed: () {
-                _timer?.cancel();
-                Navigator.pushReplacementNamed(context, '/resultado');
-              },
+              onPressed: _finalizar,
               child: const Text(
                 'FINALIZAR MEDIÇÃO',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),

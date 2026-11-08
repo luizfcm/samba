@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../funcionalidades/medicao/dominio/exercicio.dart';
 import '../core/app_colors.dart';
 
 class TesteView extends StatefulWidget {
@@ -172,7 +173,13 @@ class _TesteViewState extends State<TesteView> {
           SizedBox(
             height: 56,
             child: ElevatedButton(
-              onPressed: () => Navigator.pushNamed(context, '/medicao'),
+              onPressed: () => Navigator.pushNamed(
+                context,
+                '/medicao',
+                arguments: tipoExercicio == 'Salto Vertical'
+                    ? Exercicio.salto
+                    : Exercicio.remada,
+              ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.verdeLimao,
                 foregroundColor: AppColors.azulEscuro,
