@@ -2,22 +2,67 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fl_chart/fl_chart.dart';
 
+import '../../funcionalidades/medicao/aplicacao/curva_reduzida.dart';
+import '../../funcionalidades/medicao/aplicacao/frequencia_media.dart';
+import '../../funcionalidades/medicao/aplicacao/resumo_sessao.dart';
+import '../../funcionalidades/medicao/dominio/sessao_medicao.dart';
+import '../../nucleo/persistencia/banco_local.dart';
 import '../core/app_colors.dart';
 
-class ResultadoView extends StatelessWidget {
+class ResultadoView extends StatefulWidget {
   const ResultadoView({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final List<FlSpot> pontosCurva = const [
-      FlSpot(0.0, 0),
-      FlSpot(0.1, 80),
-      FlSpot(0.3, 210),
-      FlSpot(0.55, 485),
-      FlSpot(0.8, 180),
-      FlSpot(1.0, 120),
-      FlSpot(1.2, 0),
+  State<ResultadoView> createState() => _ResultadoViewState();
+}
+
+class _ResultadoViewState extends State<ResultadoView> {
+  SessaoMedicao? _sessao;
+  List<FlSpot> _pontosCurva = const [];
+  String _valorPico = '—';
+  bool _salvando = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_sessao != null) return;
+
+    final sessao = ModalRoute.of(context)!.settings.arguments as SessaoMedicao;
+    _sessao = sessao;
+    _pontosCurva = [
+      for (final ponto in reduzirCurva(sessao.amostras))
+        FlSpot(ponto.tempoS, ponto.forcaN),
     ];
+    _valorPico = valorDestaque(resumirSessao(sessao));
+  }
+
+  Future<void> _salvar() async {
+    if (_salvando) return;
+    _salvando = true;
+    final sessao = _sessao!;
+    final amostras = sessao.amostras;
+    try {
+      await BancoLocal.salvarSessao(
+        exercicio: sessao.exercicio.name,
+        inicioUtc: sessao.inicio,
+        frequenciaHz: frequenciaMediaHz(amostras),
+        amostras: amostras,
+      );
+    } catch (_) {
+      _salvando = false;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível salvar o treino.')),
+      );
+      return;
+    }
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pontosCurva = _pontosCurva;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
@@ -126,7 +171,7 @@ class ResultadoView extends StatelessWidget {
               Expanded(
                 child: _buildMetricaCard(
                   'Força de Pico',
-                  '485 kgf',
+                  _valorPico,
                   '+2.3% vs média',
                 ),
               ),
@@ -150,13 +195,7 @@ class ResultadoView extends StatelessWidget {
                 elevation: 0,
                 shape: const StadiumBorder(),
               ),
-              onPressed: () {
-                Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  '/home',
-                  (route) => false,
-                );
-              },
+              onPressed: _salvar,
               child: const Text(
                 'SALVAR TREINO',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
