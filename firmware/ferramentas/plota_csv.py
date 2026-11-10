@@ -14,6 +14,7 @@ Exemplos:
   python plota_csv.py tracao.txt --mvv --filtro 30     (sem calibracao: saida da ponte em mV/V)
   python plota_csv.py salto01.csv --unidade N --filtro 30 --titulo "Salto CMJ - celula em compressao"
   python plota_csv.py ruido_1000sps.csv --histograma
+  python plota_csv.py ble_mao.csv --mvv --filtro 30 --espectro   (tempo + espectro: mostra o 60 Hz)
 """
 
 import argparse
@@ -97,6 +98,41 @@ def filtra(valores, taxa, corte):
     return list(filtfilt(b, a, valores))
 
 
+def espectro(ax, y, taxa, unidade):
+    """Densidade espectral (Welch) em escala log; marca 60 Hz e harmonicos da rede eletrica."""
+    import numpy as np
+    v = np.asarray(y, dtype=float)
+    v = v - v.mean()
+    try:
+        from scipy.signal import welch
+        f, pxx = welch(v, fs=taxa, nperseg=min(len(v), 2048))
+        amp = np.sqrt(pxx)
+        rotulo = "densidade espectral (%s/raiz(Hz))" % unidade
+    except ImportError:
+        w = np.hanning(len(v))
+        amp = np.abs(np.fft.rfft(v * w)) * 2 / w.sum()
+        f = np.fft.rfftfreq(len(v), 1 / taxa)
+        rotulo = "amplitude (%s)" % unidade
+    ax.semilogy(f[1:], amp[1:], lw=0.8, color="#1f5fa8")
+    for k in range(1, int(taxa / 2 / 60) + 1):
+        ax.axvline(60 * k, color="#c0392b", lw=0.6, alpha=0.35, ls="--")
+    ax.text(61, amp[1:].max(), "60 Hz e harmonicos (rede eletrica)", color="#c0392b", fontsize=8, va="top")
+    ax.set_xlim(0, taxa / 2)
+    ax.set_xlabel("frequencia (Hz)")
+    ax.set_ylabel(rotulo)
+    ax.grid(alpha=0.3, which="both")
+    # picos principais no terminal
+    ordem = np.argsort(amp)[::-1]
+    picos = []
+    for i in ordem:
+        if f[i] < 2 or any(abs(f[i] - q) < 3 for q in picos):
+            continue
+        picos.append(f[i])
+        if len(picos) == 5:
+            break
+    print("picos do espectro (Hz): " + ", ".join("%.1f" % q for q in picos))
+
+
 def estatisticas(t, y, unidade):
     n = len(y)
     dur = t[-1] - t[0]
@@ -120,6 +156,8 @@ def main():
     p.add_argument("--filtro", type=float, help="corte em Hz de um Butterworth 2a ordem fase zero (precisa de scipy)")
     p.add_argument("--titulo", default=None)
     p.add_argument("--histograma", action="store_true", help="acrescenta o histograma (bom para ruido com a celula parada)")
+    p.add_argument("--espectro", action="store_true",
+                   help="acrescenta o espectro (FFT/Welch): mostra interferencia de 60 Hz e harmonicos")
     p.add_argument("--saida", default=None, help="PNG de saida (padrao: mesmo nome do CSV)")
     a = p.parse_args()
 
@@ -142,25 +180,36 @@ def main():
     taxa = estatisticas(t, y, unidade)
     yf = filtra(y, taxa, a.filtro) if a.filtro else None
 
-    ncol = 2 if a.histograma else 1
-    fig, eixos = plt.subplots(1, ncol, figsize=(11 if ncol == 2 else 9, 4.5),
-                              gridspec_kw={"width_ratios": [3, 1]} if ncol == 2 else None)
-    ax = eixos[0] if ncol == 2 else eixos
-    ax.plot(t, y, lw=0.6, color="#9aa7b8" if yf else "#1f5fa8", label="cru (%.0f Hz)" % taxa)
+    # Layout: tempo (+ histograma ao lado) e, com --espectro, o espectro embaixo
+    linhas = [["tempo", "hist"] if a.histograma else ["tempo"]]
+    if a.espectro:
+        linhas.append(["espectro", "espectro"] if a.histograma else ["espectro"])
+    fig, eixos = plt.subplot_mosaic(linhas, figsize=(11 if a.histograma else 10, 4.5 + (3.8 if a.espectro else 0)),
+                                    width_ratios=[3, 1] if a.histograma else None,
+                                    height_ratios=[1.2, 1] if a.espectro else None, layout="constrained")
+    ax = eixos["tempo"]
+    ax.plot(t, y, lw=0.6, color="#9aa7b8" if yf else "#1f5fa8", label="cru (%.0f amostras/s)" % taxa)
     if yf:
         ax.plot(t, yf, lw=1.4, color="#1f5fa8", label="filtrado %.0f Hz (fase zero)" % a.filtro)
         ax.legend(loc="best", fontsize=9)
+    ax.set_xlim(t[0], t[-1])
     ax.set_xlabel("tempo (s)")
-    ax.set_ylabel("forca (%s)" % unidade if not bruto else "contagens do ADC")
+    if a.mvv:
+        ax.set_ylabel("saida da ponte (mV/V)")
+    elif bruto:
+        ax.set_ylabel("contagens do ADC")
+    else:
+        ax.set_ylabel("forca (%s)" % unidade)
     ax.grid(alpha=0.3)
     ax.set_title(a.titulo or a.csv)
     if a.histograma:
-        h = eixos[1]
+        h = eixos["hist"]
         h.hist(y, bins=40, orientation="horizontal", color="#1f5fa8")
         h.set_xlabel("ocorrencias")
         h.grid(alpha=0.3)
         h.set_ylim(ax.get_ylim())
-    fig.tight_layout()
+    if a.espectro:
+        espectro(eixos["espectro"], y, taxa, unidade)
     saida = a.saida or a.csv.rsplit(".", 1)[0] + ".png"
     fig.savefig(saida, dpi=200)
     print("grafico salvo: %s" % saida)

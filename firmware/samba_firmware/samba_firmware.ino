@@ -1,6 +1,6 @@
 /*
   Projeto SAMBA - firmware de producao (protocolo BLE v2)
-  ESP32-S3-DevKitC-1 + ADS1220 (1000 Hz) + celula de carga tipo S
+  ESP32-S3-DevKitC-1 + ADS1220 (1200 Hz, modo turbo) + celula de carga tipo S
 
   Arquitetura
     ISR do DRDY (GPIO14, borda de descida): carimba o tempo (esp_timer, us) e acorda a tarefa.
@@ -116,7 +116,7 @@ void enviaComando(uint8_t op, uint8_t u8 = 0, float f = 0, int32_t i32 = 0) {
 // Tarefa de aquisicao
 // ======================================================================
 enum class Media : uint8_t { NENHUMA, TARA, CALKG, RUIDO };
-constexpr uint32_t RUIDO_AMOSTRAS = 2000;  // 2 s a 1000 Hz
+constexpr uint32_t RUIDO_AMOSTRAS = 2400;  // 2 s a 1200 Hz
 
 struct EstadoAq {
   bool erroRegs = false, erroDrdy = false, erroTravado = false, avddBaixa = false;

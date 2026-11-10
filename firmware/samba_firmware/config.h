@@ -23,16 +23,17 @@ constexpr float G_PADRAO           = 9.80665f;
 
 // ---------- ADS1220 ----------
 constexpr uint32_t SPI_HZ   = 4000000;  // datasheet: SCLK ate ~6,6 MHz. Se o teste 02 ('k 4') falhar, use 1000000
-constexpr uint16_t TAXA_HZ  = 1000;     // protocolo v2: 1000 Hz
+constexpr uint16_t TAXA_HZ  = 1200;     // turbo 1200 SPS: com o oscilador interno do ADS (-2 %) fica > 1000 Hz
 constexpr uint8_t  ADS_REG0 = 0x0E;     // AIN0/AIN1, ganho 128, PGA ligado
-constexpr uint8_t  ADS_REG1 = 0xC4;     // 1000 SPS normal, conversao continua (600 SPS = 0xA4)
+constexpr uint8_t  ADS_REG1 = 0xB4;     // DR=101 + MODE=10 (turbo) + CM=1 -> 1200 SPS continuo
+                                        // (1000 SPS normal = 0xC4 resulta em ~983 Hz, abaixo de 1000)
 constexpr uint8_t  ADS_REG2 = 0x40;     // referencia externa REFP0/REFN0 (ratiometrico)
 constexpr uint8_t  ADS_REG3 = 0x00;     // DRDY so no pino dedicado
 constexpr float    ADS_GANHO = 128.0f;
 
 // ---------- Aquisicao ----------
-constexpr uint32_t TARA_AMOSTRAS       = 1000;     // 1 s a 1000 Hz
-constexpr uint32_t CALKG_AMOSTRAS      = 2000;     // 2 s (comando serial calkg)
+constexpr uint32_t TARA_AMOSTRAS       = 1200;     // 1 s a 1200 Hz
+constexpr uint32_t CALKG_AMOSTRAS      = 2400;     // 2 s (comando serial calkg)
 constexpr int32_t  LIMITE_SATURACAO    = 8388000;  // |contagens| >= isso -> bit 0 (fundo de escala = 8388607)
 constexpr uint32_t AMOSTRAS_IGUAIS_MAX = 250;      // 250 leituras identicas seguidas = ADC travado (bit 3)
 constexpr uint32_t DRDY_TIMEOUT_MS     = 100;      // sem DRDY por 100 ms = erro (bit 3)
@@ -42,12 +43,12 @@ constexpr uint32_t MONITOR_AVDD_MS     = 2000;     // checagem de AVDD quando pa
 
 // ---------- Transmissao ----------
 constexpr uint8_t  AMOSTRAS_POR_PACOTE = 20;    // 16 + 6*20 = 136 bytes -> MTU >= 139
-constexpr size_t   FILA_AMOSTRAS       = 2048;  // ~2 s de folga a 1000 Hz se o radio engasgar
+constexpr size_t   FILA_AMOSTRAS       = 2048;  // ~1,7 s de folga a 1200 Hz se o radio engasgar
 constexpr uint32_t PACOTE_MAX_ESPERA_MS = 60;   // envia pacote incompleto se ficar parado esse tempo
 constexpr uint16_t MTU_PREFERIDO       = 247;
 constexpr uint32_t ESTADO_INTERVALO_MS = 100;   // notifica Estado no maximo 10x/s
-// Reserva de buffers da pilha NimBLE (12 x 256 B): a Medicao so notifica com mais que isto livre, para a
-// resposta de um comando (ex.: STOP) nao falhar com ATT 0x11 (Insufficient Resources).
+// Reserva de buffers da pilha NimBLE: a Medicao so notifica com mais que isto livre, para a resposta
+// de um comando (ex.: STOP) nao falhar com ATT 0x11 (Insufficient Resources).
 constexpr int      RESERVA_BUFFERS_BLE = 4;
 
 // Parametros de conexao pedidos ao celular (unidades de 1,25 ms; timeout em 10 ms).

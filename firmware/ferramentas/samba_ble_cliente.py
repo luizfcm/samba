@@ -218,13 +218,12 @@ async def ao_vivo(col, segundos, janela=5.0):
     """Grafico em tempo real das amostras que chegam pelo BLE."""
     import matplotlib.pyplot as plt
     plt.ion()
-    fig, ax = plt.subplots(figsize=(10, 4.5))
+    fig, ax = plt.subplots(figsize=(10, 4.5), layout="constrained")  # constrained: o titulo nao corta
     linha, = ax.plot([], [], lw=0.8, color="#1f5fa8")
     ax.set_xlim(-janela, 0)
-    ax.set_xlabel("tempo (s)")
+    ax.set_xlabel("tempo (s, 0 = agora)")
     ax.set_ylabel("saida da ponte (mV/V)")
     ax.grid(alpha=0.3)
-    fig.tight_layout()
     fim = time.perf_counter() + segundos
     n_janela = int(janela * 1100)
     while time.perf_counter() < fim and plt.fignum_exists(fig.number):
@@ -246,7 +245,38 @@ async def ao_vivo(col, segundos, janela=5.0):
     restante = fim - time.perf_counter()
     if restante > 0:  # janela fechada antes do fim: continua coletando sem grafico
         await asyncio.sleep(restante)
-    return fig
+    return fig, ax, linha
+
+
+def desenha_completo(fig, ax, linha, col, corte_hz=30.0):
+    """Depois do STOP: troca a janela de 5 s pela coleta inteira (tempo desde o START),
+    com o sinal cru e o filtrado (Butterworth fase zero)."""
+    import matplotlib.pyplot as plt
+    a = col.amostras
+    if len(a) < 2 or not plt.fignum_exists(fig.number):
+        return
+    fator = col.estado["fator"] if col.estado else None
+    x = [(s[1] - a[0][1]) / 1e6 for s in a]
+    y = [para_mvv(s, fator) for s in a]
+    linha.set_data(x, y)
+    linha.set_color("#9aa7b8")
+    linha.set_label("cru (%.0f amostras/s)" % ((len(a) - 1) / x[-1] if x[-1] > 0 else 0))
+    try:
+        from scipy.signal import butter, filtfilt
+        taxa = (len(a) - 1) / x[-1]
+        b, c = butter(2, corte_hz / (taxa / 2))
+        ax.plot(x, filtfilt(b, c, y), lw=1.4, color="#1f5fa8", label="filtrado %.0f Hz (fase zero)" % corte_hz)
+    except Exception:
+        pass  # sem scipy: fica so o cru
+    ax.set_xlim(0, x[-1])
+    lo, hi = min(y), max(y)
+    m = (hi - lo) * 0.08 or 0.001
+    ax.set_ylim(lo - m, hi + m)
+    ax.set_xlabel("tempo desde o START (s)")
+    ax.set_title("SAMBA via BLE: %d amostras em %.1f s | %d pacotes | %d perdidas | MTU %s"
+                 % (len(a), x[-1], col.pacotes, col.perdidas, col.mtu))
+    ax.legend(loc="best", fontsize=9)
+    fig.canvas.draw_idle()
 
 
 async def progresso(col, segundos):
@@ -325,7 +355,7 @@ async def principal(args):
             fig = None
             try:
                 if args.ao_vivo:
-                    fig = await ao_vivo(col, args.segundos)
+                    fig, eixo, linha = await ao_vivo(col, args.segundos)
                 else:
                     await progresso(col, args.segundos)
             finally:
@@ -346,6 +376,11 @@ async def principal(args):
             if fig is not None:
                 import matplotlib.pyplot as plt
                 if plt.fignum_exists(fig.number):
+                    desenha_completo(fig, eixo, linha, col)
+                    if args.csv:
+                        png = args.csv.rsplit(".", 1)[0] + "_ao_vivo.png"
+                        fig.savefig(png, dpi=200)
+                        print("Grafico da coleta inteira salvo: %s" % png)
                     print("Feche a janela do grafico para terminar.")
                     plt.ioff()
                     plt.show()
