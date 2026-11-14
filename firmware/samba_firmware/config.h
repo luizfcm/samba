@@ -43,12 +43,15 @@ constexpr uint32_t MONITOR_AVDD_MS     = 2000;     // checagem de AVDD quando pa
 
 // ---------- Transmissao ----------
 constexpr uint8_t  AMOSTRAS_POR_PACOTE = 20;    // 16 + 6*20 = 136 bytes -> MTU >= 139
-constexpr size_t   FILA_AMOSTRAS       = 2048;  // ~1,7 s de folga a 1200 Hz se o radio engasgar
+// Fila aquisicao -> BLE: com o enlace abaixo de ~1165 amostras/s as amostras aguardam aqui.
+// ESP32-S3 N16R8 com "PSRAM: OPI PSRAM": 60 s na PSRAM; sem PSRAM, 2048 amostras na RAM interna.
+constexpr size_t   FILA_AMOSTRAS_PSRAM = (size_t)TAXA_HZ * 60;  // 72 000 amostras x 24 B = ~1,7 MB
+constexpr size_t   FILA_AMOSTRAS       = 2048;                  // sem PSRAM
 constexpr uint32_t PACOTE_MAX_ESPERA_MS = 60;   // envia pacote incompleto se ficar parado esse tempo
 constexpr uint16_t MTU_PREFERIDO       = 247;
 constexpr uint32_t ESTADO_INTERVALO_MS = 100;   // notifica Estado no maximo 10x/s
-// Reserva de buffers da pilha NimBLE: a Medicao so notifica com mais que isto livre, para a resposta
-// de um comando (ex.: STOP) nao falhar com ATT 0x11 (Insufficient Resources).
+// Pacotes ATT (notificacoes e respostas de escrita) saem do pool msys_1 (12 x 256 B). A Medicao so notifica
+// com mais que isto livre no msys_1, para a resposta de um comando (ex.: STOP) nao falhar com ATT 0x11.
 constexpr int      RESERVA_BUFFERS_BLE = 4;
 
 // Parametros de conexao pedidos ao celular (unidades de 1,25 ms; timeout em 10 ms).

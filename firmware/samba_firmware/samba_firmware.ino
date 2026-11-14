@@ -11,7 +11,8 @@
       controle de fluxo, atualiza Estado, grava a NVS e atende o Monitor Serial.
     NimBLE (nucleo 0): servico GATT do protocolo v2.
 
-  Bibliotecas: NimBLE-Arduino 2.x (Gerenciador de Bibliotecas). Placa: "ESP32S3 Dev Module".
+  Bibliotecas: NimBLE-Arduino 2.x (Gerenciador de Bibliotecas). Placa: "ESP32S3 Dev Module",
+  com "PSRAM: OPI PSRAM" (a fila de 60 s fica na PSRAM; sem isso cai para ~1,7 s).
   Monitor Serial: 921600 baud, "Nova linha". Digite "ajuda" para ver os comandos de bancada.
 
   Decisoes que nao estao escritas no protocolo v2:
@@ -34,6 +35,7 @@
 #else
 #include "os/os_mbuf.h"
 #endif
+#include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "esp_task_wdt.h"
 #include "config.h"
@@ -51,6 +53,7 @@ Ads1220 ads;
 Preferences prefs;
 TaskHandle_t tarefaAq = nullptr;
 QueueHandle_t filaAmostras = nullptr;
+size_t tamanhoFila = 0;  // FILA_AMOSTRAS_PSRAM ou FILA_AMOSTRAS (ver setup)
 QueueHandle_t filaComandos = nullptr;
 
 // ISR -> tarefa de aquisicao
@@ -80,6 +83,21 @@ std::atomic<uint16_t> connHandle{0}, mtuAtual{23};
 std::atomic<uint32_t> nPacotes{0}, nPacotesDescartados{0}, nFalhasNotify{0}, nAmostrasSemMtu{0};
 std::atomic<uint32_t> nEsperaBuffer{0};      // vezes em que o envio esperou para preservar a reserva de buffers
 std::atomic<int> mbufMinimo{99};             // menor numero de buffers livres visto (diagnostico do enlace)
+
+// Pacotes ATT saem do pool msys_1 (12 x 256 B); os_msys_num_free() soma tambem o msys_2.
+struct os_mempool *poolAtt() {
+  static struct os_mempool *p = nullptr;
+  if (!p) {
+    struct os_mempool_info info;
+    for (struct os_mempool *m = os_mempool_info_get_next(nullptr, &info); m; m = os_mempool_info_get_next(m, &info))
+      if (strcmp(info.omi_name, "msys_1") == 0) { p = m; break; }
+  }
+  return p;
+}
+int buffersAttLivres() {
+  struct os_mempool *p = poolAtt();
+  return p ? (int)p->mp_num_free : os_msys_num_free();
+}
 std::atomic<uint16_t> connIntervalo{0};      // unidades de 1,25 ms (o que o central aceitou de fato)
 std::atomic<uint8_t> phyTx{1}, phyRx{1};     // 1 = 1M, 2 = 2M
 
@@ -431,39 +449,62 @@ void tarefaAquisicao(void *) {
 // ======================================================================
 // BLE
 // ======================================================================
+// Ate 3 conexoes simultaneas (NimBLE). Conexao ativa = a que assinou a Medicao; eventos de outras
+// conexoes nao alteram handle, MTU nem estado da ativa.
+void adotaConexao(NimBLEConnInfo &info) {
+  bool nova = !conectado || info.getConnHandle() != connHandle;
+  connHandle = info.getConnHandle();
+  mtuAtual = info.getMTU();
+  connIntervalo = info.getConnInterval();
+  conectado = true;
+  if (nova) {
+    mbufMinimo = 99;
+    Serial.printf("[BLE] conexao ativa: handle %u | MTU %u | %u conexao(oes) abertas\n", info.getConnHandle(),
+                  info.getMTU(), srv->getConnectedCount());
+  }
+}
+
+bool ehAtiva(NimBLEConnInfo &info) { return conectado && info.getConnHandle() == connHandle; }
+
 class CbServidor : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer *s, NimBLEConnInfo &info) override {
-    connHandle = info.getConnHandle();
-    mtuAtual = info.getMTU();
-    conectado = true;
     s->updateConnParams(info.getConnHandle(), CONN_INT_MIN, CONN_INT_MAX, CONN_LATENCIA, CONN_TIMEOUT);
     s->setDataLen(info.getConnHandle(), 251);
-    connIntervalo = info.getConnInterval();
-    mbufMinimo = 99;
-    Serial.printf("[BLE] conectado: %s | intervalo inicial %.2f ms\n", info.getAddress().toString().c_str(),
-                  info.getConnInterval() * 1.25);
+    Serial.printf("[BLE] conectado: %s | handle %u | intervalo inicial %.2f ms | %u conexao(oes)\n",
+                  info.getAddress().toString().c_str(), info.getConnHandle(), info.getConnInterval() * 1.25,
+                  s->getConnectedCount());
+    if (!conectado) adotaConexao(info);  // ja ha uma ativa: esta so vira ativa se assinar a Medicao
   }
   void onConnParamsUpdate(NimBLEConnInfo &info) override {
-    connIntervalo = info.getConnInterval();
-    Serial.printf("[BLE] parametros de conexao: intervalo %.2f ms, latencia %u, timeout %u ms\n",
-                  info.getConnInterval() * 1.25, info.getConnLatency(), info.getConnTimeout() * 10);
+    if (ehAtiva(info)) connIntervalo = info.getConnInterval();
+    Serial.printf("[BLE] parametros de conexao (handle %u): intervalo %.2f ms, latencia %u, timeout %u ms\n",
+                  info.getConnHandle(), info.getConnInterval() * 1.25, info.getConnLatency(), info.getConnTimeout() * 10);
   }
-  void onPhyUpdate(NimBLEConnInfo &, uint8_t tx, uint8_t rx) override {
-    phyTx = tx;
-    phyRx = rx;
-    Serial.printf("[BLE] PHY: tx %uM, rx %uM\n", tx, rx);
+  void onPhyUpdate(NimBLEConnInfo &info, uint8_t tx, uint8_t rx) override {
+    if (ehAtiva(info)) {
+      phyTx = tx;
+      phyRx = rx;
+    }
+    Serial.printf("[BLE] PHY (handle %u): tx %uM, rx %uM\n", info.getConnHandle(), tx, rx);
   }
-  void onDisconnect(NimBLEServer *, NimBLEConnInfo &, int motivo) override {
+  void onDisconnect(NimBLEServer *s, NimBLEConnInfo &info, int motivo) override {
+    if (!ehAtiva(info)) {
+      Serial.printf("[BLE] conexao extra encerrada (handle %u, motivo 0x%X); a ativa continua\n", info.getConnHandle(),
+                    motivo);
+      return;
+    }
     conectado = false;
     inscritoMedicao = false;
     inscritoEstado = false;
     mtuAtual = 23;
     enviaComando(OP_STOP);
-    Serial.printf("[BLE] desconectado (motivo 0x%X): STOP automatico, anunciando de novo\n", motivo);
+    Serial.printf("[BLE] desconectado (handle %u, motivo 0x%X): STOP automatico, anunciando de novo\n",
+                  info.getConnHandle(), motivo);
   }
-  void onMTUChange(uint16_t mtu, NimBLEConnInfo &) override {
-    mtuAtual = mtu;
-    Serial.printf("[BLE] MTU = %u -> %u amostras por pacote%s\n", mtu, amostrasPorMtu(mtu, AMOSTRAS_POR_PACOTE),
+  void onMTUChange(uint16_t mtu, NimBLEConnInfo &info) override {
+    if (ehAtiva(info)) mtuAtual = mtu;
+    Serial.printf("[BLE] MTU = %u (handle %u) -> %u amostras por pacote%s\n", mtu, info.getConnHandle(),
+                  amostrasPorMtu(mtu, AMOSTRAS_POR_PACOTE),
                   mtu < 139 ? " (abaixo de 139: o app deve pedir requestMtu(247))" : "");
   }
 };
@@ -494,8 +535,17 @@ class CbControle : public NimBLECharacteristicCallbacks {
 };
 
 class CbInscricao : public NimBLECharacteristicCallbacks {
-  void onSubscribe(NimBLECharacteristic *ch, NimBLEConnInfo &, uint16_t valor) override {
+  void onSubscribe(NimBLECharacteristic *ch, NimBLEConnInfo &info, uint16_t valor) override {
     bool ligado = valor & 0x0001;
+    if (ligado) {
+      if (!ehAtiva(info)) {  // o cliente que assina passa a ser a conexao ativa
+        inscritoMedicao = false;
+        inscritoEstado = false;
+      }
+      adotaConexao(info);
+    } else if (!ehAtiva(info)) {
+      return;  // outra conexao cancelando: nao afeta a ativa
+    }
     if (ch == chMedicao) inscritoMedicao = ligado;
     if (ch == chEstado) {
       inscritoEstado = ligado;
@@ -536,33 +586,37 @@ void iniciaBle() {
 }
 
 // Notifica um pacote. true = pode descartar (enviado, ou sem ninguem para receber).
+// Com a conexao ativa o pacote nunca e descartado; so apos a desconexao (timeout de supervisao).
 bool enviaPacote(const MontadorPacote &p) {
-  static uint32_t falhandoDesde = 0;
   if (!conectado || !inscritoMedicao) {
     nPacotesDescartados++;
     return true;
   }
-  int livres = os_msys_num_free();
+  int livres = buffersAttLivres();
   if (livres < mbufMinimo) mbufMinimo = livres;
   if (livres > RESERVA_BUFFERS_BLE) {
     if (chMedicao->notify(p.buf, p.tamanho(), connHandle)) {
       nPacotes++;
-      falhandoDesde = 0;
       return true;
     }
     nFalhasNotify++;
   } else {
     nEsperaBuffer++;  // radio atrasado: guarda a reserva para os comandos e tenta de novo
   }
-  // Sem buffer na pilha BLE: tenta de novo; a fila de 2 s absorve.
+  return false;  // tenta de novo em ~1 ms; enquanto isso as amostras novas esperam na fila
+}
+
+// Religa o anuncio se nenhum cliente assinou a Medicao e o anuncio esta parado (conexao orfa aberta).
+void servicoAnuncio() {
+  static uint32_t ultimo = 0;
   uint32_t agora = millis();
-  if (falhandoDesde == 0) falhandoDesde = agora;
-  if (agora - falhandoDesde > 500) {  // conexao ruim de verdade: desiste deste pacote
-    falhandoDesde = 0;
-    nPacotesDescartados++;
-    return true;
+  if (agora - ultimo < 2000) return;
+  ultimo = agora;
+  NimBLEAdvertising *adv = NimBLEDevice::getAdvertising();
+  if (!inscritoMedicao && !adv->isAdvertising() && srv->getConnectedCount() < 3) {
+    if (adv->start())
+      Serial.printf("[BLE] anuncio religado (%u conexao(oes) abertas sem cliente recebendo)\n", srv->getConnectedCount());
   }
-  return false;
 }
 
 void servicoMedicao() {
@@ -699,8 +753,9 @@ void mostraStatus() {
                 st & ST_AQUISICAO ? " AQUISICAO" : "");
   Serial.printf("  fator %.7f mN/contagem (%s) | deslocamento %ld | AVDD %.3f V\n", (double)fator.load(),
                 temCalibracao ? "calibrado" : "NOMINAL da etiqueta", (long)deslocamento.load(), (double)avddV.load());
-  Serial.printf("  amostras lidas %lu | perdidas no DRDY %lu | fila cheia %lu | fila agora %u\n", (unsigned long)nLidas.load(),
-                (unsigned long)nPerdidasDrdy.load(), (unsigned long)nFilaCheia.load(), (unsigned)uxQueueMessagesWaiting(filaAmostras));
+  Serial.printf("  amostras lidas %lu | perdidas no DRDY %lu | fila cheia %lu | fila agora %u de %u\n", (unsigned long)nLidas.load(),
+                (unsigned long)nPerdidasDrdy.load(), (unsigned long)nFilaCheia.load(), (unsigned)uxQueueMessagesWaiting(filaAmostras),
+                (unsigned)tamanhoFila);
   static uint32_t ultN = 0, ultMs = 0;
   uint32_t n = nLidas.load(), agora = millis();
   if (ultMs != 0 && agora - ultMs >= 1000)
@@ -708,14 +763,16 @@ void mostraStatus() {
                   (double)(n - ultN) * 1000.0 / (double)(agora - ultMs), (double)(agora - ultMs) / 1000.0);
   ultN = n;
   ultMs = agora;
-  Serial.printf("  BLE %s | MTU %u | Medicao %s | Estado %s\n", conectado ? "conectado" : "anunciando", mtuAtual.load(),
-                inscritoMedicao ? "assinada" : "-", inscritoEstado ? "assinado" : "-");
+  Serial.printf("  BLE %s | MTU %u | Medicao %s | Estado %s | %u conexao(oes) abertas | anuncio %s\n",
+                conectado ? "conectado" : "sem conexao ativa", mtuAtual.load(), inscritoMedicao ? "assinada" : "-",
+                inscritoEstado ? "assinado" : "-", srv->getConnectedCount(),
+                NimBLEDevice::getAdvertising()->isAdvertising() ? "ligado" : "desligado");
   Serial.printf("  pacotes enviados %lu | descartados %lu | notify sem buffer %lu | amostras sem MTU %lu\n",
                 (unsigned long)nPacotes.load(), (unsigned long)nPacotesDescartados.load(), (unsigned long)nFalhasNotify.load(),
                 (unsigned long)nAmostrasSemMtu.load());
-  Serial.printf("  enlace: intervalo %.2f ms | PHY tx %uM rx %uM | buffers BLE livres agora %d (minimo %d, reserva %d) | "
+  Serial.printf("  enlace: intervalo %.2f ms | PHY tx %uM rx %uM | buffers BLE (msys_1) livres agora %d (minimo %d, reserva %d) | "
                 "esperas por buffer %lu\n\n",
-                connIntervalo.load() * 1.25, phyTx.load(), phyRx.load(), os_msys_num_free(), mbufMinimo.load(),
+                connIntervalo.load() * 1.25, phyTx.load(), phyRx.load(), buffersAttLivres(), mbufMinimo.load(),
                 RESERVA_BUFFERS_BLE, (unsigned long)nEsperaBuffer.load());
 }
 
@@ -839,7 +896,18 @@ void setup() {
                 temCalibracao ? "gravada" : "NAO gravada (usando o nominal da etiqueta)", (double)fator.load(),
                 (long)deslocamento.load());
 
-  filaAmostras = xQueueCreate(FILA_AMOSTRAS, sizeof(Amostra));
+  // Fila grande na PSRAM (se habilitada na IDE); senao, a pequena na RAM interna
+  static StaticQueue_t estruturaFila;
+  uint8_t *memFila = (uint8_t *)heap_caps_malloc(FILA_AMOSTRAS_PSRAM * sizeof(Amostra), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (memFila) {
+    filaAmostras = xQueueCreateStatic(FILA_AMOSTRAS_PSRAM, sizeof(Amostra), memFila, &estruturaFila);
+    tamanhoFila = FILA_AMOSTRAS_PSRAM;
+  } else {
+    filaAmostras = xQueueCreate(FILA_AMOSTRAS, sizeof(Amostra));
+    tamanhoFila = FILA_AMOSTRAS;
+  }
+  Serial.printf("Fila de amostras: %u (%.1f s a %u Hz) na %s\n", (unsigned)tamanhoFila, (double)tamanhoFila / TAXA_HZ,
+                TAXA_HZ, memFila ? "PSRAM" : "RAM interna -> AVISO: selecione 'PSRAM: OPI PSRAM' na IDE para 60 s");
   filaComandos = xQueueCreate(16, sizeof(Comando));
   if (!filaAmostras || !filaComandos) {
     Serial.println("ERRO: sem memoria para as filas");
@@ -861,6 +929,7 @@ void setup() {
 void loop() {
   servicoMedicao();  // bloqueia no maximo ~5 ms esperando amostras
   servicoEstado();
+  servicoAnuncio();
   servicoNvs();
   servicoSerial();
   servicoLog();
