@@ -149,7 +149,13 @@ class Coletor:
             print("ATENCAO: a 1a amostra apos START tem sequencia %d (protocolo: 0)" % a[0][0])
         if a[0][1] != 0:
             print("ATENCAO: a 1a amostra apos START tem timestamp %d us (protocolo: 0)" % a[0][1])
-        dts = [a[i + 1][1] - a[i][1] for i in range(len(a) - 1) if a[i + 1][0] == a[i][0] + 1]
+        seqs = [x[0] for x in a]
+        completo = seqs == list(range(seqs[0], seqs[0] + len(seqs))) and seqs[0] == 0
+        print("integridade: %s" % (
+            "COMPLETA - as %d leituras de 0 a %d chegaram, em ordem, sem buracos nem repeticoes" % (len(a), seqs[-1])
+            if completo else "INCOMPLETA - %d leituras recebidas de %d esperadas (sequencias 0 a %d)"
+            % (len(set(seqs)), seqs[-1] + 1, seqs[-1])))
+        dts =[a[i + 1][1] - a[i][1] for i in range(len(a) - 1) if a[i + 1][0] == a[i][0] + 1]
         if dts:
             dur = (a[-1][1] - a[0][1]) / 1e6
             taxa = (a[-1][0] - a[0][0]) / dur if dur > 0 else 0
@@ -309,6 +315,31 @@ async def comando(cliente, *dados, rotulo="", tentativas=5):
     return False
 
 
+def pede_intervalo_curto(cliente):
+    """Windows 11: pede intervalo de conexao de 15 ms (sozinho o Windows usa 30 ms). Dobra a vazao possivel
+    do radio. Devolve o intervalo em ms, ou None se nao der (outro sistema, Windows antigo)."""
+    try:
+        from winrt.windows.devices.bluetooth import BluetoothLEPreferredConnectionParameters as P
+        dev = cliente._backend._requester
+        dev.request_preferred_connection_parameters(P.throughput_optimized)
+        return dev.get_connection_parameters().connection_interval * 1.25
+    except Exception:
+        return None
+
+
+async def espera_fim_do_fluxo(contador, limite=90.0):
+    """Depois do STOP a placa ainda entrega as leituras que estavam na fila (ate 60 s de leituras se o radio
+    ficou lento). Espera os pacotes pararem de chegar. contador() devolve o total de pacotes recebidos."""
+    t0 = time.perf_counter()
+    antes = contador()
+    while time.perf_counter() - t0 < limite:
+        n = contador()
+        await asyncio.sleep(0.6)
+        if contador() == n:
+            return contador() - antes
+    return None
+
+
 async def entrada(msg):
     return await asyncio.get_running_loop().run_in_executor(None, input, msg)
 
@@ -330,6 +361,9 @@ async def principal(args):
     col = Coletor()
     async with BleakClient(dispositivo) as cli:
         print("Conectado. MTU = %d (precisa de >= 139 para 20 amostras/pacote)" % cli.mtu_size)
+        intervalo = pede_intervalo_curto(cli)
+        if intervalo:
+            print("Intervalo de conexao: %.1f ms" % intervalo)
         col.mtu = cli.mtu_size
         col.estado = decodifica_estado(bytes(await cli.read_gatt_char(UUID_ESTADO)))
         mostra_estado(col.estado, "[Estado lido]")
@@ -360,7 +394,11 @@ async def principal(args):
                     await progresso(col, args.segundos)
             finally:
                 await comando(cli, OP_STOP, rotulo="STOP")  # mesmo se o grafico der erro ou Ctrl+C
-            await asyncio.sleep(0.5)  # recebe o ultimo pacote
+            fila = await espera_fim_do_fluxo(lambda: col.pacotes)  # recebe tudo o que ficou na fila da placa
+            if fila is None:
+                print("AVISO: os pacotes nao pararam de chegar 90 s depois do STOP")
+            elif fila > 3:
+                print("(radio lento: %d pacotes chegaram da fila da placa depois do STOP)" % fila)
             if args.bruto:
                 await comando(cli, OP_MODO_BRUTO, 0)
             col.relatorio()

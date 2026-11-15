@@ -29,7 +29,7 @@ import numpy as np
 from bleak import BleakClient, BleakScanner
 
 from samba_ble_cliente import (OP_MODO_BRUTO, OP_START, OP_STOP, OP_TARE, UUID_CONTROLE, UUID_MEDICAO,
-                               UUID_SERVICO, decodifica_pacote)
+                               UUID_SERVICO, decodifica_pacote, pede_intervalo_curto)
 
 G = 9.80665
 
@@ -73,9 +73,16 @@ class Dados:
 
 
 async def comando(cli, *bytes_cmd):
-    for _ in range(5):  # a placa pode responder "ocupada" se o radio estiver congestionado
+    # Com o radio congestionado a placa pode nao ter buffer para RESPONDER (erro 0x11), mas o comando
+    # chega se for enviado sem pedir resposta ("write without response").
+    try:
+        await cli.write_gatt_char(UUID_CONTROLE, bytes(bytes_cmd), response=True)
+        return True
+    except Exception:
+        pass
+    for _ in range(3):
         try:
-            await cli.write_gatt_char(UUID_CONTROLE, bytes(bytes_cmd), response=True)
+            await cli.write_gatt_char(UUID_CONTROLE, bytes(bytes_cmd), response=False)
             return True
         except Exception:
             await asyncio.sleep(0.2)
@@ -114,6 +121,7 @@ class Bluetooth(threading.Thread):
             return
         async with BleakClient(disp) as cli:
             self.cli, self.mtu, self.loop = cli, cli.mtu_size, asyncio.get_running_loop()
+            pede_intervalo_curto(cli)  # 15 ms no Windows 11: o dobro de folga no radio
             await cli.start_notify(UUID_MEDICAO, self.dados.recebe)
             await comando(cli, OP_MODO_BRUTO, 0)
             self.pronto.set()
@@ -129,16 +137,85 @@ class Bluetooth(threading.Thread):
         return asyncio.run_coroutine_threadsafe(comando(self.cli, *cmd), self.loop).result(timeout=10)
 
 
+class Usb(threading.Thread):
+    """Plano B sem Bluetooth: le a placa pelo cabo USB (comando 'grafico' do firmware, 100 pontos/s em mV/V).
+    Mesma interface da classe Bluetooth, para o resto do programa nao mudar."""
+
+    def __init__(self, dados, porta):
+        super().__init__(daemon=True)
+        self.dados, self.porta = dados, porta
+        self.pronto, self.parar = threading.Event(), threading.Event()
+        self.erro, self.mtu, self.cli = None, 0, None
+        self.trava_tx = threading.Lock()
+        self.ligado = False
+
+    def run(self):
+        import serial
+        try:
+            s = serial.Serial()
+            s.port, s.baudrate, s.timeout, s.dtr, s.rts = self.porta, 921600, 0.2, False, False  # sem resetar a ESP
+            s.open()
+        except Exception as e:
+            self.erro = "nao consegui abrir %s: %s (feche o Monitor Serial da Arduino IDE)" % (self.porta, e)
+            self.pronto.set()
+            return
+        self.cli = s
+        self.pronto.set()
+        n_pontos = 0  # o firmware envia 100 pontos/s: o tempo vem da contagem (a USB entrega em rajadas)
+        buf = b""
+        while not self.parar.is_set():
+            buf += s.read(s.in_waiting or 1)
+            while b"\n" in buf:
+                linha, buf = buf.split(b"\n", 1)
+                linha = linha.strip()
+                if linha.startswith(b"mV_V:"):
+                    try:
+                        mvv = float(linha[5:])
+                    except ValueError:
+                        continue
+                    n_pontos += 1
+                    with self.dados.trava:
+                        self.dados.t.append(n_pontos / 100.0)
+                        self.dados.kgf.append(mvv * 1000.0)  # 0,001 mV/V = 1 kgf (celula de 2000 kgf, 2 mV/V)
+                        self.dados.pacotes += 1
+        if self.ligado:
+            self._escreve("grafico")  # desliga o grafico no firmware
+        s.close()
+
+    def _escreve(self, txt):
+        with self.trava_tx:
+            self.cli.write((txt + "\n").encode())
+
+    def envia(self, op, *_):
+        if self.cli is None:
+            return False
+        if op == OP_TARE:
+            self._escreve("tara")
+        elif op == OP_START:
+            self._escreve("grafico 100")
+            self.ligado = True
+        elif op == OP_STOP and self.ligado:
+            self._escreve("grafico")
+            self.ligado = False
+        return True
+
+
 def principal(args):
     dados = Dados(args.janela)
-    ble = Bluetooth(dados)
-    print("Procurando o SAMBA...")
+    if args.usb:
+        ble = Usb(dados, args.usb)
+        meio = "pela USB"
+        print("Abrindo %s..." % args.usb)
+    else:
+        ble = Bluetooth(dados)
+        meio = "por Bluetooth"
+        print("Procurando o SAMBA...")
     ble.start()
     ble.pronto.wait(timeout=40)
     if ble.erro or ble.cli is None:
         print(ble.erro or "Nao foi possivel conectar.")
         return
-    print("Conectado (MTU %d). Feche a janela ou aperte q para sair; t refaz a tara." % ble.mtu)
+    print("Conectado %s. Feche a janela ou aperte q para sair; t refaz a tara." % meio)
 
     import matplotlib.pyplot as plt  # janela so depois de conectar (o Bluetooth ja esta na outra thread)
 
@@ -174,18 +251,18 @@ def principal(args):
         plt.pause(1.5)  # a tara leva 1 s no firmware
         dados.limpa()
         ble.envia(OP_START)
-        ax.set_title("SAMBA: força recebida por Bluetooth, ao vivo")
+        ax.set_title("SAMBA: força recebida %s, ao vivo" % meio)
 
     fim = time.perf_counter() + args.segundos if args.segundos > 0 else float("inf")
     try:
         if args.sem_tara:
             ble.envia(OP_START)
-            ax.set_title("SAMBA: força recebida por Bluetooth, ao vivo")
+            ax.set_title("SAMBA: força recebida %s, ao vivo" % meio)
         else:
             tara()
         while plt.fignum_exists(fig.number) and time.perf_counter() < fim:
             if not ble.is_alive():
-                ax.set_title("Conexão Bluetooth perdida: feche e rode de novo", color="#c0392b")
+                ax.set_title("Conexão perdida: feche e rode de novo", color="#c0392b")
             while pedidos:
                 k = pedidos.pop(0)
                 if k == "q":
@@ -231,6 +308,8 @@ def argumentos():
     p.add_argument("--sem-tara", action="store_true", help="nao faz a tara ao conectar")
     p.add_argument("--positivo", choices=["tracao", "compressao"], default="tracao",
                    help="qual esforco aparece acima de zero (depende da fiacao; confira puxando a celula)")
+    p.add_argument("--usb", metavar="PORTA", default=None,
+                   help="plano B sem Bluetooth: le a placa pelo cabo USB (ex.: --usb COM6)")
     p.add_argument("--segundos", type=float, default=0, help=argparse.SUPPRESS)  # 0 = sem limite (teste)
     p.add_argument("--salvar", default=None, help=argparse.SUPPRESS)              # PNG ao encerrar (teste)
     return p.parse_args()
