@@ -45,6 +45,22 @@ Cada repetição vem de `detectarRepeticoes` com os valores padrão, e suas mét
 
 Todos os instantes são relativos à primeira amostra da série. Em empate no pico, vale o primeiro instante. O mapa de parâmetros não é usado.
 
+### RFD e força sustentada
+
+`ProcessadorIsometria({limiarInicioN = 10, janelasRfdUs = [50000, 100000, 200000], janelaRfdMaximaUs = 20000, janelaForcaSustentadaUs = 1000000})` acrescenta a cada repetição, sempre pelos timestamps:
+
+| Campo | Métrica | Unidade | Cálculo |
+|---|---|---|---|
+| `inicioContracaoS` | Início da contração | s | Última amostra antes do início detectado com força ≤ linha de base + `limiarInicioN`; a linha de base é a mediana da força desde o fim da repetição anterior (ou o início da série) até o início detectado |
+| `rfdJanelas` | RFD média | N/s | `(F(início + janela) − F(início)) / janela` para cada janela de `janelasRfdUs`; nula se a repetição terminar antes do fim da janela |
+| `rfdMaxima` | RFD máxima | N/s | Maior `(F(t + janela) − F(t)) / janela`, com `janelaRfdMaximaUs`, para `t` de amostra em amostra do início da contração até o pico |
+| `rfdPercentualPorS` | RFD relativa | %Fmáx/s | Cada RFD dividida por `picoN`, vezes 100 |
+| `forcaSustentadaN` | Força sustentada | N | Maior média das amostras numa janela de `janelaForcaSustentadaUs` dentro da repetição |
+| `desvioForcaSustentadaN` | Variabilidade | N | Desvio padrão das amostras dessa janela |
+| `coeficienteVariacaoPercentual` | Coeficiente de variação | % | Desvio dessa janela dividido pela sua média, vezes 100 |
+
+`F(t)` entre amostras é interpolada linearmente pelo tempo. A força sustentada, o desvio e o coeficiente são nulos quando a repetição dura menos que a janela; a RFD máxima é nula quando a janela não cabe entre o início da contração e o pico.
+
 ## Detecção de repetições
 
 `detectarRepeticoes(amostras, {fracaoInicio = 0.2, fracaoFim = 0.1, duracaoMinimaUs = 300000})` devolve uma lista não modificável de `Repeticao`, com `indiceInicio` e `indiceFim` (exclusivo) na lista de amostras.
@@ -84,5 +100,6 @@ P = F · v
 - `calcularMetricasForca` exige pelo menos duas amostras.
 - `calcularMetricasForca`, `detectarRepeticoes` e `ProcessadorSalto` exigem timestamps estritamente crescentes.
 - `detectarRepeticoes` exige frações em (0, 1] e `fracaoFim` menor que `fracaoInicio`.
+- `ProcessadorIsometria` exige `limiarInicioN` maior ou igual a zero e janelas positivas.
 - `ProcessadorSalto` exige uma série com pelo menos `duracaoRepousoInicialUs`, cujo trecho inicial tenha média positiva e desvio padrão de no máximo 2% da média.
 - Entradas inválidas produzem `ArgumentError`; `ProcessadorIsometria` repassa esses erros sem alteração.
