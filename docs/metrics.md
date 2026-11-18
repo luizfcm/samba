@@ -93,6 +93,18 @@ P = F · v
 | `potenciaMaximaW` | Potência máxima | W | Maior `P` do início à decolagem |
 | `forcaMaximaN` | Força máxima | N | Maior força do início à decolagem |
 
+As fases são separadas pela velocidade. A frenagem (excêntrica) vai do instante de velocidade mínima até a primeira amostra seguinte com `v ≥ 0`, o ponto mais baixo; a propulsão (concêntrica) vai do ponto mais baixo até a última amostra antes da decolagem. Sem velocidade negativa que volte a zero antes da decolagem, as métricas da frenagem são nulas e a propulsão começa no início do salto. Integrais pela regra do trapézio com os intervalos medidos:
+
+| Campo | Métrica | Unidade | Cálculo |
+|---|---|---|---|
+| `velocidadeMinimaMs` | Velocidade mínima | m/s | Menor `v` do salto |
+| `tempoFrenagemS` | Tempo de frenagem | s | Duração da frenagem |
+| `impulsoExcentricoNs` | Impulso excêntrico | N·s | `∫ (F − m·g) dt` na frenagem |
+| `rfdFrenagemNPorS` | RFD da frenagem | N/s | `(F no fim − F no início) / tempoFrenagemS` |
+| `impulsoConcentricoNs` | Impulso concêntrico | N·s | `∫ (F − m·g) dt` na propulsão |
+| `forcaMaximaConcentricaN` | Força máxima concêntrica | N | Maior força na propulsão |
+| `potenciaMediaConcentricaW` | Potência média concêntrica | W | `∫ P dt` na propulsão dividida pela sua duração; nula se a propulsão tiver uma amostra só |
+
 `ResultadoSalto` traz `massaKg`, a lista não modificável de saltos, `alturaMediaM` (média de `alturaVooM`) e `melhorSalto` (maior `alturaVooM`, o primeiro em empate); os dois são nulos sem saltos.
 
 ## Validação
