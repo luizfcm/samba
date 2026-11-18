@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:samba_app/funcionalidades/medicao/dominio/processador_isometria.dart';
 import 'package:samba_app/nucleo/modelos/amostra_forca.dart';
@@ -11,6 +13,36 @@ AmostraForca amostra(int timestampUs, double forcaN) => AmostraForca(
 
 ResultadoIsometria processar(List<AmostraForca> amostras) =>
     const ProcessadorIsometria().processar(amostras: amostras, parametros: {});
+
+List<AmostraForca> serieRampa({
+  double rampaS = 0.5,
+  double platoS = 3,
+  double baseN = 0,
+  double ruidoN = 0,
+}) {
+  const passoUs = 500;
+  final aleatorio = Random(1);
+  final forcasN = <double>[];
+  void trecho(double duracaoS, double Function(int indice, int total) forca) {
+    final total = (duracaoS * 1e6 / passoUs).round();
+    for (var indice = 0; indice < total; indice++) {
+      forcasN.add(forca(indice, total));
+    }
+  }
+
+  trecho(1, (indice, total) => 0);
+  trecho(rampaS, (indice, total) => 400 * indice / total);
+  trecho(platoS, (indice, total) => 400);
+  trecho(0.5, (indice, total) => 400 * (total - indice) / total);
+  trecho(1, (indice, total) => 0);
+  return [
+    for (var indice = 0; indice < forcasN.length; indice++)
+      amostra(
+        indice * passoUs,
+        baseN + forcasN[indice] + (aleatorio.nextDouble() * 2 - 1) * ruidoN,
+      ),
+  ];
+}
 
 void main() {
   group('ProcessadorIsometria', () {
@@ -128,6 +160,90 @@ void main() {
       expect(resultado.instantePicoS, 0.1);
       expect(resultado.repeticoes, isEmpty);
       expect(resultado.mediaPicosN, isNull);
+    });
+
+    test('marca o início da contração antes do início detectado', () {
+      final repeticao = processar(serieRampa()).repeticoes.single;
+
+      // A rampa de 800 N/s começa em 1 s e chega a 10 N em 12,5 ms.
+      expect(repeticao.inicioContracaoS, closeTo(1.0125, 1e-9));
+      expect(repeticao.inicioContracaoS, lessThan(repeticao.inicioS));
+    });
+
+    test('usa a mediana do repouso anterior como linha de base', () {
+      final repeticao = processar(serieRampa(baseN: 20)).repeticoes.single;
+
+      // Linha de base de 20 N: o limiar de 30 N é atingido nos mesmos 12,5 ms.
+      expect(repeticao.inicioContracaoS, closeTo(1.0125, 1e-9));
+    });
+
+    test('calcula a rfd média nas janelas e a rfd máxima', () {
+      final repeticao = processar(serieRampa()).repeticoes.single;
+
+      // Rampa de 400 N em 0,5 s: 800 N/s, ou 200 %Fmáx/s com pico de 400 N.
+      expect(repeticao.rfdJanelas.map((rfd) => rfd.janelaUs), [
+        50000,
+        100000,
+        200000,
+      ]);
+      for (final rfd in [...repeticao.rfdJanelas, repeticao.rfdMaxima]) {
+        expect(rfd.rfdNPorS, closeTo(800, 1e-6));
+        expect(rfd.rfdPercentualPorS, closeTo(200, 1e-6));
+      }
+      expect(repeticao.rfdMaxima.janelaUs, 20000);
+    });
+
+    test('calcula a força sustentada no platô', () {
+      final repeticao = processar(serieRampa()).repeticoes.single;
+
+      expect(repeticao.forcaSustentadaN, closeTo(400, 1e-9));
+      expect(repeticao.desvioForcaSustentadaN, closeTo(0, 1e-9));
+      expect(repeticao.coeficienteVariacaoPercentual, closeTo(0, 1e-9));
+    });
+
+    test('devolve nulo quando a repetição é mais curta que a janela', () {
+      final repeticao =
+          const ProcessadorIsometria(janelasRfdUs: [50000, 1000000])
+              .processar(
+                amostras: serieRampa(rampaS: 0.1, platoS: 0.4),
+                parametros: {},
+              )
+              .repeticoes
+              .single;
+
+      expect(repeticao.forcaSustentadaN, isNull);
+      expect(repeticao.desvioForcaSustentadaN, isNull);
+      expect(repeticao.coeficienteVariacaoPercentual, isNull);
+      expect(repeticao.rfdJanelas[0].rfdNPorS, isNotNull);
+      expect(repeticao.rfdJanelas[1].rfdNPorS, isNull);
+      expect(repeticao.rfdJanelas[1].rfdPercentualPorS, isNull);
+    });
+
+    test('mede a variabilidade do ruído uniforme no platô', () {
+      final repeticao = processar(serieRampa(ruidoN: 2)).repeticoes.single;
+
+      // Ruído uniforme de ±2 N tem desvio padrão de 2 / √3 ≈ 1,15 N.
+      expect(repeticao.desvioForcaSustentadaN, closeTo(2 / sqrt(3), 0.1));
+      expect(repeticao.forcaSustentadaN, closeTo(400, 0.5));
+      expect(repeticao.coeficienteVariacaoPercentual, closeTo(0.29, 0.03));
+    });
+
+    test('rejeita parâmetros inválidos', () {
+      final amostras = serieRampa();
+
+      for (final processador in [
+        const ProcessadorIsometria(limiarInicioN: -1),
+        const ProcessadorIsometria(limiarInicioN: double.nan),
+        const ProcessadorIsometria(janelasRfdUs: [0]),
+        const ProcessadorIsometria(janelasRfdUs: [50000, -1]),
+        const ProcessadorIsometria(janelaRfdMaximaUs: 0),
+        const ProcessadorIsometria(janelaForcaSustentadaUs: 0),
+      ]) {
+        expect(
+          () => processador.processar(amostras: amostras, parametros: {}),
+          throwsArgumentError,
+        );
+      }
     });
 
     test('repassa os erros de validação das métricas', () {
