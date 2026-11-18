@@ -89,6 +89,17 @@ class ResultadoSalto {
     return soma / saltos.length;
   }
 
+  /// Decréscimo percentual em relação a repetir sempre a melhor altura pelo
+  /// voo; nulo com menos de dois saltos.
+  double? get indiceFadigaPercentual {
+    if (saltos.length < 2) return null;
+    var somaM = 0.0;
+    for (final salto in saltos) {
+      somaM += salto.alturaVooM;
+    }
+    return 100 * (1 - somaM / (melhorSalto!.alturaVooM * saltos.length));
+  }
+
   /// Em empate, vale o primeiro salto.
   ResultadoSaltoIndividual? get melhorSalto {
     if (saltos.isEmpty) return null;
