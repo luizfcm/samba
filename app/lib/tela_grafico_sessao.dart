@@ -152,7 +152,7 @@ class _TelaGraficoSessaoState extends State<TelaGraficoSessao> {
                           spots: pontos,
                           isCurved: false,
                           barWidth: 2,
-                          color: Colors.deepPurple,
+                          color: const Color.fromARGB(255, 27, 33, 190),
 
                           dotData: const FlDotData(show: false),
                         ),

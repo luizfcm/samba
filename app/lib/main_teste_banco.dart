@@ -5,8 +5,28 @@ import 'nucleo/persistencia/banco_local.dart';
 import 'tela_grafico_sessao.dart';
 import 'nucleo/aquisicao/series_simuladas.dart';
 
-void main() {
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'nucleo/sincronizacao/teste_supabase.dart';
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+
+  const supabaseKey = String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
+
+  if (supabaseUrl.isEmpty || supabaseKey.isEmpty) {
+    throw StateError('Configuração do Supabase ausente.');
+  }
+
+  await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseKey);
+
+  debugPrint('TESTE: iniciando Supabase');
+
+  await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseKey);
+
+  debugPrint('TESTE: Supabase inicializado');
 
   runApp(
     const MaterialApp(
@@ -14,6 +34,13 @@ void main() {
       home: TelaTesteBanco(),
     ),
   );
+
+  debugPrint('TESTE: runApp chamado');
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    debugPrint('TESTE: primeiro quadro concluído');
+  });
+  ;
 }
 
 class TelaTesteBanco extends StatefulWidget {
@@ -24,6 +51,37 @@ class TelaTesteBanco extends StatefulWidget {
 }
 
 class _TelaTesteBancoState extends State<TelaTesteBanco> {
+  Future<void> _testarSupabase() async {
+    if (_ocupado) return;
+
+    setState(() {
+      _ocupado = true;
+      _mensagem = 'Enviando sessão ao Supabase...';
+    });
+
+    try {
+      final resposta = await TesteSupabase.enviarUltimaSessao();
+
+      if (!mounted) return;
+
+      setState(() {
+        _mensagem = resposta;
+      });
+    } catch (erro) {
+      if (!mounted) return;
+
+      setState(() {
+        _mensagem = 'Erro no Supabase: $erro';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _ocupado = false;
+        });
+      }
+    }
+  }
+
   bool _ocupado = false;
   String _mensagem = 'Pronto para iniciar a simulação.';
 
@@ -75,7 +133,7 @@ class _TelaTesteBancoState extends State<TelaTesteBanco> {
 
       await fonte.iniciar();
 
-      // Aguarda o recebimento das 1.000 amostras.
+      // Aguarda o recebimento de todas as amostras da série.
       final amostras = await coleta;
 
       cronometroColeta.stop();
@@ -136,6 +194,11 @@ class _TelaTesteBancoState extends State<TelaTesteBanco> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: _ocupado ? null : _testarSupabase,
+              child: const Text('Testar envio ao Supabase'),
+            ),
             const Text(
               'Simulação de força - 1000 Hz',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
