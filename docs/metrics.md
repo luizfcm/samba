@@ -105,7 +105,7 @@ As fases são separadas pela velocidade. A frenagem (excêntrica) vai do instant
 | `forcaMaximaConcentricaN` | Força máxima concêntrica | N | Maior força na propulsão |
 | `potenciaMediaConcentricaW` | Potência média concêntrica | W | `∫ P dt` na propulsão dividida pela sua duração; nula se a propulsão tiver uma amostra só |
 
-`ResultadoSalto` traz `massaKg`, a lista não modificável de saltos, `alturaMediaM` (média de `alturaVooM`) e `melhorSalto` (maior `alturaVooM`, o primeiro em empate); os dois são nulos sem saltos.
+`ResultadoSalto` traz `massaKg`, a lista não modificável de saltos, `alturaMediaM` (média de `alturaVooM`) e `melhorSalto` (maior `alturaVooM`, o primeiro em empate); os dois são nulos sem saltos. `indiceFadigaPercentual` é `100 × (1 − soma das alturas / (melhor altura × número de saltos))`, com as alturas pelo voo, e é nulo com menos de dois saltos.
 
 ## Validação
 

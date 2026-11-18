@@ -18,6 +18,25 @@ List<AmostraForca> amostras(List<double> forcasN) => [
 ResultadoSalto processar(List<double> forcasN) => const ProcessadorSalto()
     .processar(amostras: amostras(forcasN), parametros: {});
 
+ResultadoSaltoIndividual saltoComVoo(double tempoVooS) =>
+    ResultadoSaltoIndividual(
+      inicioS: 0,
+      decolagemS: 0,
+      aterrissagemS: tempoVooS,
+      tempoVooS: tempoVooS,
+      velocidadeDecolagemMs: 0,
+      potenciaMaximaW: 0,
+      forcaMaximaN: 0,
+      velocidadeMinimaMs: null,
+      tempoFrenagemS: null,
+      impulsoExcentricoNs: null,
+      rfdFrenagemNPorS: null,
+      impulsoConcentricoNs: 0,
+      forcaMaximaConcentricaN: 0,
+      potenciaMediaConcentricaW: null,
+      pontos: const [],
+    );
+
 List<double> serieSemContramovimento() {
   const massaKg = 75.0;
   const pesoN = massaKg * 9.81;
@@ -181,6 +200,37 @@ void main() {
       );
       expect(salto.forcaMaximaConcentricaN, salto.forcaMaximaN);
       expect(salto.potenciaMediaConcentricaW, greaterThan(0));
+    });
+
+    test('calcula o índice de fadiga pelas alturas', () {
+      final resultado = ResultadoSalto(
+        massaKg: 75,
+        saltos: [saltoComVoo(0.4), saltoComVoo(0.3), saltoComVoo(0.2)],
+      );
+
+      // Alturas proporcionais a 0,16, 0,09 e 0,04:
+      // 100 × (1 − 0,29 / (0,16 × 3)) = 39,583 %.
+      expect(resultado.indiceFadigaPercentual, closeTo(39.583, 0.001));
+    });
+
+    test('não há fadiga entre saltos iguais da série simulada', () {
+      final resultado = processar(gerarSerieSalto(ruidoN: 0));
+
+      expect(resultado.indiceFadigaPercentual, closeTo(0, 1e-9));
+    });
+
+    test('não calcula o índice de fadiga com menos de dois saltos', () {
+      expect(
+        ResultadoSalto(
+          massaKg: 75,
+          saltos: [saltoComVoo(0.4)],
+        ).indiceFadigaPercentual,
+        isNull,
+      );
+      expect(
+        ResultadoSalto(massaKg: 75, saltos: []).indiceFadigaPercentual,
+        isNull,
+      );
     });
 
     test('rejeita timestamps fora de ordem', () {
