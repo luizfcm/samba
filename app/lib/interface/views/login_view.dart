@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 
 import '../core/app_colors.dart';
 
+import '../core/widgets/samba_botao.dart';
+
 class LoginView extends StatefulWidget {
   const LoginView({super.key});
 
@@ -165,21 +167,9 @@ class _LoginViewState extends State<LoginView> {
           const SizedBox(height: 4),
 
           // Botão Entrar
-          SizedBox(
-            height: 56,
-            child: ElevatedButton(
-              onPressed: _entrar,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.verdeLimao,
-                foregroundColor: AppColors.azulEscuro,
-                elevation: 0,
-                shape: const StadiumBorder(),
-              ),
-              child: const Text(
-                'Entrar',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
-              ),
-            ),
+          SambaBotao(
+            rotulo: 'Entrar',
+            onPressed: _entrar,
           ),
 
           // Empurra "Criar conta" para o rodapé da folha.
