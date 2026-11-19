@@ -46,10 +46,6 @@ const pacoteParcialFirmware =
     '56 cc 00 00 00 00 1e cf 00 00 5a 03 82 d2 00 00 5b 03 '
     'ad d5 00 00 5a 03 ca d8 00 00 5a 03 92 db 00 00 5b 03';
 
-// Característica Estado do mesmo firmware, para o futuro decodificador:
-// 02 04 00 b0 04 67 21 12 41 ca 23 00 00 = versão 2, status 0x0004,
-// taxa 1200 Hz, fator 9.1331549 mN/contagem e deslocamento 9162 contagens.
-
 void main() {
   group('PacoteMedicao.decodificar', () {
     test('decodifica um pacote completo gerado pelo firmware', () {
