@@ -9,6 +9,8 @@ import '../../funcionalidades/medicao/dominio/sessao_medicao.dart';
 import '../../nucleo/persistencia/banco_local.dart';
 import '../core/app_colors.dart';
 
+import '../core/widgets/samba_botao.dart';
+
 class ResultadoView extends StatefulWidget {
   const ResultadoView({super.key});
 
@@ -186,21 +188,9 @@ class _ResultadoViewState extends State<ResultadoView> {
             ],
           ),
           const Spacer(),
-          SizedBox(
-            height: 56,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.verdeLimao,
-                foregroundColor: AppColors.azulEscuro,
-                elevation: 0,
-                shape: const StadiumBorder(),
-              ),
-              onPressed: _salvar,
-              child: const Text(
-                'SALVAR TREINO',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-              ),
-            ),
+          SambaBotao(
+            rotulo: 'Salvar Treino',
+            onPressed: _salvar,
           ),
         ],
       ),

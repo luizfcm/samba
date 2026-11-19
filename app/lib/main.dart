@@ -9,7 +9,8 @@ import 'interface/views/perfil_view.dart';
 import 'interface/views/resultado_view.dart';
 import 'interface/views/splash_view.dart';
 import 'interface/views/teste_view.dart';
-
+import 'interface/views/criarconta_view.dart';
+import 'interface/views/esquecisenha_view.dart';
 void main() {
   runApp(const AplicativoSamba());
 }
@@ -41,6 +42,8 @@ class AplicativoSamba extends StatelessWidget {
         '/resultado': (contexto) => const ResultadoView(),
         '/historico': (contexto) => const HistoricoView(),
         '/perfil': (contexto) => const PerfilView(),
+        '/criarconta': (contexto) => const CriarContaView(),
+        '/esquecisenha': (contexto) => const EsqueciSenhaView(),
       },
     );
   }

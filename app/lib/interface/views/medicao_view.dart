@@ -9,6 +9,8 @@ import '../../funcionalidades/medicao/dominio/exercicio.dart';
 import '../../nucleo/aquisicao/fonte_forca_simulada.dart';
 import '../core/app_colors.dart';
 
+import '../core/widgets/samba_botao.dart';
+
 class MedicaoView extends StatefulWidget {
   const MedicaoView({super.key});
 
@@ -159,22 +161,9 @@ class _MedicaoViewState extends State<MedicaoView> {
             style: const TextStyle(color: AppColors.cinza, fontSize: 14),
           ),
           const Spacer(),
-          SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.verdeLimao,
-                foregroundColor: AppColors.azulEscuro,
-                elevation: 0,
-                shape: const StadiumBorder(),
-              ),
-              onPressed: _finalizar,
-              child: const Text(
-                'FINALIZAR MEDIÇÃO',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-              ),
-            ),
+          SambaBotao(
+            rotulo: 'Finalizar Medição',
+            onPressed: _finalizar,
           ),
         ],
       ),

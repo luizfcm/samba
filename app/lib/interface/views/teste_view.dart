@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import '../../funcionalidades/medicao/dominio/exercicio.dart';
 import '../core/app_colors.dart';
 
+import '../core/widgets/samba_botao.dart';
+
 class TesteView extends StatefulWidget {
   const TesteView({super.key});
 
@@ -170,27 +172,15 @@ class _TesteViewState extends State<TesteView> {
           const SizedBox(height: 10),
           _opcaoModalidade('Salto Vertical'),
           const Spacer(),
-          SizedBox(
-            height: 56,
-            child: ElevatedButton(
-              onPressed: () => Navigator.pushNamed(
-                context,
-                '/medicao',
-                arguments: tipoExercicio == 'Salto Vertical'
-                    ? Exercicio.salto
-                    : Exercicio.remada,
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.verdeLimao,
-                foregroundColor: AppColors.azulEscuro,
-                elevation: 0,
-                shape: const StadiumBorder(),
-              ),
-              child: const Text(
-                'INICIAR MEDIÇÃO',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ),
+          SambaBotao(
+            rotulo: 'Iniciar Medição',
+            onPressed: () => Navigator.pushNamed(
+              context,
+              '/medicao',
+              arguments: tipoExercicio == 'Salto Vertical'
+                  ? Exercicio.salto
+                  : Exercicio.remada,
+            )
           ),
         ],
       ),
