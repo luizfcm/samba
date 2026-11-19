@@ -60,8 +60,8 @@ class ControladorMedicao extends ChangeNotifier {
     }
   }
 
-  /// O estado só passa a finalizada depois que a fonte conclui a parada, mesmo
-  /// que ela falhe; amostras recebidas nesse intervalo são ignoradas.
+  /// Continua recebendo amostras até a fonte concluir a parada e só então
+  /// finaliza a sessão e passa a finalizada, mesmo que a parada falhe.
   Future<SessaoMedicao> finalizar({DateTime? termino}) async {
     final assinatura = _assinatura;
     if (_estado != EstadoMedicao.medindo || assinatura == null) {
@@ -72,9 +72,9 @@ class ControladorMedicao extends ChangeNotifier {
     _assinatura = null;
 
     try {
-      await assinatura.cancel();
       await _fonte.parar();
     } finally {
+      await assinatura.cancel();
       sessao.finalizar(termino: instante);
       _alterarEstado(EstadoMedicao.finalizada);
     }
