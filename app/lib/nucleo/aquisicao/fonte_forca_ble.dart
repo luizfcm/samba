@@ -56,13 +56,15 @@ class FonteForcaBle implements FonteForca {
   Stream<AmostraForca> get amostras => _amostras.stream;
 
   /// Desliga o modo bruto, se estiver ligado, e espera o bit de aquisição em
-  /// andamento; sem confirmação, envia STOP e lança [TimeoutException].
+  /// andamento; sem confirmação, envia STOP e lança [TimeoutException]. Se o
+  /// equipamento já estiver adquirindo, para a aquisição antes do START.
   @override
   Future<void> iniciar() async {
     if (_adquirindo) return;
 
     final estado = EstadoEquipamento.decodificar(await _conexao.lerEstado());
     _ultimoEstado = estado;
+    if (estado.aquisicaoEmAndamento) await _pararAquisicaoAnterior();
     if (estado.modoBruto) await _enviar(_desligarModoBruto);
 
     try {
@@ -86,7 +88,34 @@ class FonteForcaBle implements FonteForca {
     if (!_adquirindo) return;
     _adquirindo = false;
     await _enviar(_stop);
+    await _aguardarSilencio();
+  }
 
+  /// STOP, silêncio dos pacotes e bit de aquisição desligado, nessa ordem de
+  /// espera; o bit pode ter desligado durante o silêncio.
+  Future<void> _pararAquisicaoAnterior() async {
+    final desligou = Completer<void>();
+    final assinatura = _estados.stream.listen((estado) {
+      if (!desligou.isCompleted && !estado.aquisicaoEmAndamento) {
+        desligou.complete();
+      }
+    });
+    try {
+      await _enviar(_stop);
+      await _aguardarSilencio();
+      await desligou.future.timeout(
+        tempoLimiteParada,
+        onTimeout: () => throw TimeoutException(
+          'O equipamento não parou a aquisição anterior.',
+          tempoLimiteParada,
+        ),
+      );
+    } finally {
+      await assinatura.cancel();
+    }
+  }
+
+  Future<void> _aguardarSilencio() async {
     final silencio = Completer<void>();
     Timer? temporizador;
     void reiniciar() {

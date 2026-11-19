@@ -152,6 +152,35 @@ void main() {
       ]);
     });
 
+    test('para a aquisição anterior antes de iniciar', () async {
+      conexao.estadoAtual = estadoComStatus(0x0024);
+      conexao.responder = (comando) {
+        if (comando.first == 0x02) {
+          conexao.notificarMedicao(bytesHex(pacoteParcialFirmware));
+          conexao.notificarEstado(0x0004);
+        }
+        if (comando.first == 0x01) conexao.notificarEstado(0x0024);
+      };
+
+      await fonte.iniciar();
+
+      expect(conexao.comandos, [
+        [0x02],
+        [0x01],
+      ]);
+      expect(recebidas, hasLength(6));
+      expect(fonte.ultimoEstado!.aquisicaoEmAndamento, isTrue);
+    });
+
+    test('não inicia se a aquisição anterior não parar', () async {
+      conexao.estadoAtual = estadoComStatus(0x0024);
+
+      await expectLater(fonte.iniciar(), throwsA(isA<TimeoutException>()));
+      expect(conexao.comandos, [
+        [0x02],
+      ]);
+    });
+
     test('envia STOP e falha sem confirmação do início', () async {
       await expectLater(fonte.iniciar(), throwsA(isA<TimeoutException>()));
 
