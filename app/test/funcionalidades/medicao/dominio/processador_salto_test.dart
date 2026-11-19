@@ -163,6 +163,21 @@ void main() {
       expect(resultado.saltos, hasLength(9));
     });
 
+    test('ignora a pessoa fora da plataforma como voo', () {
+      final resultado = processar([
+        ...gerarSerieSalto(saltos: 1, ruidoN: 0),
+        ...List.filled(4000, 0.0),
+        ...gerarSerieSalto(saltos: 1, ruidoN: 0),
+      ]);
+
+      // Os 4 s fora da plataforma dariam 9,81 × 4² / 8 = 19,6 m de altura.
+      expect(resultado.saltos, hasLength(2));
+      for (final salto in resultado.saltos) {
+        expect(salto.tempoVooS, closeTo(0.4, 0.002));
+      }
+      expect(resultado.melhorSalto!.alturaVooM, lessThan(0.2));
+    });
+
     test('rejeita série sem repouso com a pessoa parada', () {
       expect(() => processar(List.filled(3000, 0.0)), throwsArgumentError);
       expect(() => processar(List.filled(3000, 150.0)), throwsArgumentError);
