@@ -82,7 +82,7 @@ void main() {
     });
 
     test('adiciona à sessão as amostras recebidas em ordem', () async {
-      await controlador.iniciar(Exercicio.salto, inicio: inicio);
+      await controlador.iniciar(Exercicio.remada, inicio: inicio);
       fonte.emitir(0, 0, 10);
       fonte.emitir(1, 10000, 20);
       fonte.emitir(2, 20000, -5);
@@ -94,6 +94,34 @@ void main() {
       ]);
       expect(controlador.amostrasPerdidas, 0);
       expect(controlador.amostrasDescartadas, 0);
+    });
+
+    test('inverte o sinal da força no salto', () async {
+      await controlador.iniciar(Exercicio.salto, inicio: inicio);
+      fonte.emitir(0, 0, -735.75);
+      fonte.emitir(1, 1000, -1806.2);
+      fonte.emitir(2, 2000, 0);
+      fonte.emitir(3, 3000, 12.5);
+
+      final forcasN = controlador.sessao!.amostras.map(
+        (amostra) => amostra.forcaN,
+      );
+      expect(forcasN, [735.75, 1806.2, 0, -12.5]);
+      expect(forcasN.elementAt(2).isNegative, isFalse);
+    });
+
+    test('mantém o sinal da força na remada e na extensora', () async {
+      for (final exercicio in [Exercicio.remada, Exercicio.extensora]) {
+        await controlador.iniciar(exercicio, inicio: inicio);
+        fonte.emitir(0, 0, 400);
+        fonte.emitir(1, 1000, -2);
+
+        expect(controlador.sessao!.amostras.map((amostra) => amostra.forcaN), [
+          400,
+          -2,
+        ]);
+        await controlador.finalizar(termino: termino);
+      }
     });
 
     test('soma lacunas de sequência a partir da primeira amostra', () async {
