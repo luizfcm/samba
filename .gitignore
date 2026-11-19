@@ -23,6 +23,10 @@ data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 
+# Firmware (capturas locais)
+firmware/**/*.csv
+firmware/**/*.png
+
 # Sistema
 .DS_Store
 Thumbs.db
