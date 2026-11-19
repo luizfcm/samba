@@ -81,6 +81,13 @@ class ControladorMedicao extends ChangeNotifier {
     return sessao;
   }
 
+  Future<void> tarar() async {
+    if (_estado == EstadoMedicao.medindo) {
+      throw StateError('Não é possível tarar durante uma medição.');
+    }
+    await _fonte.tarar();
+  }
+
   @override
   void dispose() {
     _encerrado = true;

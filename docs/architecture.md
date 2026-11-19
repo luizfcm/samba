@@ -6,7 +6,7 @@ FonteForca → ControladorMedicao → SessaoMedicao → processadores
 
 ## Fonte
 
-Uma `FonteForca` entrega `AmostraForca` (sequência, timestamp em µs, força em N e status) por um Stream e é iniciada e parada pelo controlador. O formato dos pacotes enviados pelo dispositivo está no [protocolo BLE v2](protocolo_ble_v2.md). Nenhuma camada assume taxa fixa: os intervalos vêm sempre dos timestamps.
+Uma `FonteForca` entrega `AmostraForca` (sequência, timestamp em µs, força em N e status) por um Stream e é iniciada, parada e tarada pelo controlador; a tara só é permitida fora de uma medição. O formato dos pacotes enviados pelo dispositivo está no [protocolo BLE v2](protocolo_ble_v2.md). Nenhuma camada assume taxa fixa: os intervalos vêm sempre dos timestamps.
 
 ## Controlador
 
