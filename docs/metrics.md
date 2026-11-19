@@ -63,11 +63,11 @@ Todos os instantes são relativos à primeira amostra da série. Em empate no pi
 
 ## Detecção de repetições
 
-`detectarRepeticoes(amostras, {fracaoInicio = 0.2, fracaoFim = 0.1, duracaoMinimaUs = 300000})` devolve uma lista não modificável de `Repeticao`, com `indiceInicio` e `indiceFim` (exclusivo) na lista de amostras.
+`detectarRepeticoes(amostras, {fracaoInicio = 0.2, fracaoFim = 0.1, duracaoMinimaUs = 300000, percentilLinhaBase = 0.1})` devolve uma lista não modificável de `Repeticao`, com `indiceInicio` e `indiceFim` (exclusivo) na lista de amostras.
 
-O pico é a maior força da série. Uma repetição começa na primeira amostra com força maior ou igual a `fracaoInicio × pico` e termina na primeira amostra seguinte com força menor que `fracaoFim × pico`, que fica fora do trecho. Se a série acabar durante uma contração, a repetição vai até a última amostra. Como os limiares dependem do pico de toda a série, um pico isolado alto eleva os limiares das demais repetições.
+O pico é a maior força da série, e a linha de base é o percentil `percentilLinhaBase` (padrão 0,1) da força da série inteira, que representa o repouso mesmo com descansos curtos, enquanto ele ocupar mais que essa fração da série. Os limiares são `linha de base + fração × (pico − linha de base)`: uma repetição começa na primeira amostra com força maior ou igual ao limiar de `fracaoInicio` e termina na primeira amostra seguinte com força menor que o limiar de `fracaoFim`, que fica fora do trecho. Assim, uma pré-carga no repouso não faz as repetições se juntarem. Se a série acabar durante uma contração, a repetição vai até a última amostra. Como os limiares dependem do pico de toda a série, um pico isolado alto eleva os limiares das demais repetições.
 
-São descartados os trechos com menos de duas amostras ou com duração menor que `duracaoMinimaUs`, medida do timestamp da primeira à última amostra do trecho. Lista vazia ou pico menor ou igual a zero devolve lista vazia.
+São descartados os trechos com menos de duas amostras ou com duração menor que `duracaoMinimaUs`, medida do timestamp da primeira à última amostra do trecho. Lista vazia, pico menor ou igual a zero ou pico igual à linha de base devolve lista vazia.
 
 ## Salto
 
@@ -111,7 +111,7 @@ As fases são separadas pela velocidade. A frenagem (excêntrica) vai do instant
 
 - `calcularMetricasForca` exige pelo menos duas amostras.
 - `calcularMetricasForca`, `detectarRepeticoes` e `ProcessadorSalto` exigem timestamps estritamente crescentes.
-- `detectarRepeticoes` exige frações em (0, 1] e `fracaoFim` menor que `fracaoInicio`.
+- `detectarRepeticoes` exige frações em (0, 1], `fracaoFim` menor que `fracaoInicio` e `percentilLinhaBase` em [0, 1).
 - `ProcessadorIsometria` exige `limiarInicioN` maior ou igual a zero e janelas positivas.
 - `ProcessadorSalto` exige uma série com pelo menos `duracaoRepousoInicialUs` e uma janela de repouso que atenda às condições da massa.
 - Entradas inválidas produzem `ArgumentError`; `ProcessadorIsometria` repassa esses erros sem alteração.
