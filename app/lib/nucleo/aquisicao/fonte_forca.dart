@@ -7,6 +7,7 @@ abstract interface class FonteForca {
   /// Chamadas durante uma aquisição ativa não a reiniciam.
   Future<void> iniciar();
 
-  /// A parada permite uma nova aquisição no mesmo Stream.
+  /// Conclui quando não houver mais amostras a entregar; a parada permite uma
+  /// nova aquisição no mesmo Stream.
   Future<void> parar();
 }

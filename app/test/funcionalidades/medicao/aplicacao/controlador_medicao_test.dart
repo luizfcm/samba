@@ -208,7 +208,6 @@ void main() {
       await controlador.iniciar(Exercicio.salto, inicio: inicio);
       fonte.emitir(0, 0);
       final finalizacao = controlador.finalizar(termino: termino);
-      fonte.emitir(1, 10000);
 
       expect(controlador.estado, EstadoMedicao.medindo);
       expect(controlador.sessao!.ativa, isTrue);
@@ -218,9 +217,29 @@ void main() {
       fonte.parada!.complete();
       final sessao = await finalizacao;
       expect(sessao.termino, termino);
-      expect(sessao.quantidadeAmostras, 1);
       expect(controlador.estado, EstadoMedicao.finalizada);
       expect(notificacoes, 2);
+    });
+
+    test('recebe as amostras entregues enquanto a fonte para', () async {
+      fonte.parada = Completer<void>();
+      await controlador.iniciar(Exercicio.remada, inicio: inicio);
+      fonte.emitir(0, 0, 10);
+      final finalizacao = controlador.finalizar(termino: termino);
+      fonte.emitir(1, 1000, 20);
+      fonte.emitir(2, 2000, 30);
+
+      expect(fonte.chamadasParar, 1);
+      expect(fonte.assinada, isTrue);
+      expect(controlador.sessao!.quantidadeAmostras, 3);
+
+      fonte.parada!.complete();
+      final sessao = await finalizacao;
+      fonte.emitir(3, 3000, 40);
+
+      expect(sessao.amostras.map((amostra) => amostra.forcaN), [10, 20, 30]);
+      expect(sessao.finalizada, isTrue);
+      expect(fonte.assinada, isFalse);
     });
 
     test('rejeita iniciar durante uma medição', () async {
