@@ -107,3 +107,5 @@ A característica notifica o aplicativo quando `status`, `calibration_factor` ou
 O decodificador lança `FormatException` para versão diferente de 2, `count` igual a zero, tamanho diferente de `16 + 6 × count`, `delta_us` diferente de zero na primeira amostra ou igual a zero nas seguintes.
 
 `EstadoEquipamento.decodificar` lê os 13 bytes da característica Estado e expõe cada bit de status; lança `FormatException` para tamanho diferente de 13 ou versão diferente de 2.
+
+`FonteForcaBle` implementa a fonte de força sobre uma `ConexaoEquipamento`. Ela decodifica cada pacote de medição, conta e ignora os inválidos, e transforma erro ou fim da conexão em erro no fluxo de amostras. Para iniciar, desliga o modo bruto se ele estiver ligado, envia START e espera o bit 5, por até 2 s; sem confirmação, envia STOP e falha. Para parar, envia STOP e conclui depois de 600 ms sem pacotes, com espera máxima de 10 s. Para tarar, envia TARE e espera o bit 1 ligar e desligar, por até 3 s. Os tempos são configuráveis no construtor.
