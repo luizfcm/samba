@@ -99,7 +99,7 @@ void main() {
 
     test('indica quando o processador rejeita a série', () {
       final semRepouso = resumirSessao(
-        criarSessao(Exercicio.salto, gerarSerieSalto().sublist(2000)),
+        criarSessao(Exercicio.salto, List.filled(3000, 0)),
       );
       final curta = resumirSessao(criarSessao(Exercicio.remada, [10]));
 

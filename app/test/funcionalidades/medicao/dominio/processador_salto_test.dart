@@ -144,11 +144,28 @@ void main() {
       );
     });
 
-    test('rejeita série sem repouso inicial estável', () {
-      expect(
-        () => processar(gerarSerieSalto().sublist(2000)),
-        throwsArgumentError,
-      );
+    test('estima a massa no primeiro repouso depois da plataforma vazia', () {
+      final resultado = processar([
+        ...List.filled(3000, 0.0),
+        ...gerarSerieSalto(),
+      ]);
+
+      expect(resultado.massaKg, closeTo(75, 75 * 0.005));
+      expect(resultado.saltos, hasLength(10));
+      // 3 s de plataforma vazia e 2 s de repouso antes da primeira descida.
+      expect(resultado.saltos.first.inicioS, closeTo(5.011, 0.002));
+    });
+
+    test('ignora o salto anterior ao primeiro repouso', () {
+      final resultado = processar(gerarSerieSalto().sublist(2000));
+
+      expect(resultado.massaKg, closeTo(75, 75 * 0.01));
+      expect(resultado.saltos, hasLength(9));
+    });
+
+    test('rejeita série sem repouso com a pessoa parada', () {
+      expect(() => processar(List.filled(3000, 0.0)), throwsArgumentError);
+      expect(() => processar(List.filled(3000, 150.0)), throwsArgumentError);
       expect(
         () => processar(gerarSerieSalto().sublist(0, 500)),
         throwsArgumentError,
