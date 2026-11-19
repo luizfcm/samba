@@ -41,7 +41,7 @@ O bloco da amostra `i`, de 0 a N − 1, começa no offset `16 + 6 × i`:
 
 ### Dimensionamento
 
-O pacote leva até 20 amostras: `16 + 6 × 20 = 136` bytes. Só o último pacote depois do STOP pode ter menos. Com os 3 bytes do cabeçalho ATT da notificação, o MTU mínimo é 139; o firmware pede MTU 247, e o aplicativo deve pedir MTU 247 e prioridade alta de conexão antes do START. Com cerca de 1165 amostras por segundo, são cerca de 58 pacotes por segundo.
+O pacote leva até 20 amostras: `16 + 6 × 20 = 136` bytes. O firmware envia um pacote incompleto quando ele fica 60 ms sem completar, quando o status muda, quando há amostra perdida, quando o MTU não comporta 20 amostras e no fim da aquisição, depois do STOP. Com os 3 bytes do cabeçalho ATT da notificação, o MTU mínimo é 139; o firmware pede MTU 247, e o aplicativo deve pedir MTU 247 e prioridade alta de conexão antes do START. Com cerca de 1165 amostras por segundo, são cerca de 58 pacotes por segundo.
 
 ### Bits de status
 
@@ -66,7 +66,7 @@ O AVDD só é medido no START e a cada 2 s com a aquisição parada.
 | Controle | `1d770003-fc8b-4e8e-aa34-c86e1b9eeaf5` | Write |
 | Estado | `1d770004-fc8b-4e8e-aa34-c86e1b9eeaf5` | Read, Notify |
 
-A característica Medição notifica os pacotes descritos acima.
+O equipamento se anuncia com o nome `SAMBA` e o UUID do serviço. A característica Medição notifica os pacotes descritos acima. Uma desconexão faz o firmware parar a aquisição sozinho.
 
 ## Comandos
 
