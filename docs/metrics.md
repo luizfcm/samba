@@ -71,9 +71,9 @@ São descartados os trechos com menos de duas amostras ou com duração menor qu
 
 ## Salto
 
-`ProcessadorSalto({duracaoRepousoInicialUs = 1000000, fracaoVoo = 0.1, duracaoMinimaVooUs = 100000, fracaoRepouso = 0.05, duracaoMinimaRepousoUs = 100000})` retorna `ResultadoSalto`, com g = 9,81 m/s². O mapa de parâmetros não é usado.
+`ProcessadorSalto({duracaoRepousoInicialUs = 1000000, forcaMinimaRepousoN = 200, fracaoVoo = 0.1, duracaoMinimaVooUs = 100000, fracaoRepouso = 0.05, duracaoMinimaRepousoUs = 100000})` retorna `ResultadoSalto`, com g = 9,81 m/s². O mapa de parâmetros não é usado.
 
-A massa é a média da força nas amostras do primeiro `duracaoRepousoInicialUs`, dividida por g; o peso é `massa × g`. Um voo é um trecho com força menor que `fracaoVoo × peso` que dura pelo menos `duracaoMinimaVooUs`: a decolagem é a primeira amostra do trecho e a aterrissagem, a primeira amostra depois dele. O início do salto é a última amostra do último trecho antes da decolagem em que a força fica dentro de `peso ± fracaoRepouso × peso` por pelo menos `duracaoMinimaRepousoUs`. A busca não passa da aterrissagem do salto anterior; sem esse repouso, o salto é ignorado.
+A massa é a média da força, dividida por g, na primeira janela de `duracaoRepousoInicialUs` em que a média passa de `forcaMinimaRepousoN` e o desvio padrão fica abaixo de 2% da média; o mínimo evita confundir a plataforma vazia com a pessoa parada. O peso é `massa × g`, e a busca de saltos começa no fim dessa janela. Um voo é um trecho com força menor que `fracaoVoo × peso` que dura pelo menos `duracaoMinimaVooUs`: a decolagem é a primeira amostra do trecho e a aterrissagem, a primeira amostra depois dele. O início do salto é a última amostra do último trecho antes da decolagem em que a força fica dentro de `peso ± fracaoRepouso × peso` por pelo menos `duracaoMinimaRepousoUs`. A busca não passa da aterrissagem do salto anterior; sem esse repouso, o salto é ignorado.
 
 Do início até a última amostra antes da decolagem, cada `PontoSalto` traz:
 
@@ -113,5 +113,5 @@ As fases são separadas pela velocidade. A frenagem (excêntrica) vai do instant
 - `calcularMetricasForca`, `detectarRepeticoes` e `ProcessadorSalto` exigem timestamps estritamente crescentes.
 - `detectarRepeticoes` exige frações em (0, 1] e `fracaoFim` menor que `fracaoInicio`.
 - `ProcessadorIsometria` exige `limiarInicioN` maior ou igual a zero e janelas positivas.
-- `ProcessadorSalto` exige uma série com pelo menos `duracaoRepousoInicialUs`, cujo trecho inicial tenha média positiva e desvio padrão de no máximo 2% da média.
+- `ProcessadorSalto` exige uma série com pelo menos `duracaoRepousoInicialUs` e uma janela de repouso que atenda às condições da massa.
 - Entradas inválidas produzem `ArgumentError`; `ProcessadorIsometria` repassa esses erros sem alteração.
