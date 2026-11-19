@@ -4,7 +4,7 @@ Versão 2 do protocolo entre o dispositivo SAMBA e o aplicativo: pacote de medi�
 
 ## Aquisição
 
-O firmware do ESP32-S3 lê o ADC ADS1220 a 1000 Hz. A calibração e a tara são feitas no firmware, que guarda o fator e o deslocamento de calibração em NVS. Fora do modo bruto, o pacote transporta a força já convertida em milinewtons.
+O firmware do ESP32-S3 lê o ADC ADS1220 a 1200 SPS nominais, cerca de 1165 medidos na placa. A calibração e a tara são feitas no firmware, que guarda o fator e o deslocamento de calibração em NVS. Fora do modo bruto, o pacote transporta a força já convertida em milinewtons, com tração positiva e compressão negativa.
 
 ### Calibração
 
@@ -41,19 +41,21 @@ O bloco da amostra `i`, de 0 a N − 1, começa no offset `16 + 6 × i`:
 
 ### Dimensionamento
 
-O pacote leva 20 amostras: `16 + 6 × 20 = 136` bytes. Com os 3 bytes do cabeçalho ATT da notificação, o MTU mínimo é 139. A 1000 Hz, são 50 pacotes por segundo.
+O pacote leva até 20 amostras: `16 + 6 × 20 = 136` bytes. O firmware envia um pacote incompleto quando ele fica 60 ms sem completar, quando o status muda, quando há amostra perdida, quando o MTU não comporta 20 amostras e no fim da aquisição, depois do STOP. Com os 3 bytes do cabeçalho ATT da notificação, o MTU mínimo é 139; o firmware pede MTU 247, e o aplicativo deve pedir MTU 247 e prioridade alta de conexão antes do START. Com cerca de 1165 amostras por segundo, são cerca de 58 pacotes por segundo.
 
 ### Bits de status
 
 | Bit | Significado |
 |---:|---|
-| 0 | Saturação |
+| 0 | Saturação: o valor absoluto das contagens chega a 8 388 000 |
 | 1 | Tara em andamento |
-| 2 | Sem calibração |
-| 3 | Erro no ADC |
+| 2 | Sem calibração: ligado enquanto a calibração for a nominal |
+| 3 | Erro no ADC: registradores errados, DRDY parado por mais de 100 ms, 250 leituras iguais seguidas ou AVDD abaixo de 4,5 V |
 | 4 | Modo bruto: `force_mN` carrega contagens do ADC em vez de mN |
 | 5 | Aquisição em andamento: ligado após START, desligado após STOP |
 | 6–15 | Reservados |
+
+O AVDD só é medido no START e a cada 2 s com a aquisição parada.
 
 ## Serviço GATT
 
@@ -64,7 +66,7 @@ O pacote leva 20 amostras: `16 + 6 × 20 = 136` bytes. Com os 3 bytes do cabeça
 | Controle | `1d770003-fc8b-4e8e-aa34-c86e1b9eeaf5` | Write |
 | Estado | `1d770004-fc8b-4e8e-aa34-c86e1b9eeaf5` | Read, Notify |
 
-A característica Medição notifica os pacotes descritos acima.
+O equipamento se anuncia com o nome `SAMBA` e o UUID do serviço. A característica Medição notifica os pacotes descritos acima. Uma desconexão faz o firmware parar a aquisição sozinho.
 
 ## Comandos
 
@@ -78,7 +80,7 @@ Os comandos são escritos na característica Controle. O primeiro byte é o opco
 | 0x04 | MODO_BRUTO | uint8: 1 liga, 0 desliga | 2 |
 | 0x05 | SET_CALIBRACAO | fator float32, deslocamento int32 | 9 |
 
-START inicia a aquisição e zera a sequência e o timestamp: a primeira amostra enviada depois dele tem sequência 0 e timestamp 0. STOP interrompe a aquisição. TARE inicia a tara no firmware, sinalizada pelo bit 1 de status enquanto estiver em andamento, e ao terminar grava as contagens atuais como deslocamento. MODO_BRUTO liga ou desliga o envio de contagens do ADC, sinalizado pelo bit 4. SET_CALIBRACAO grava o fator e o deslocamento de calibração.
+START inicia a aquisição e zera a sequência e o timestamp: a primeira amostra enviada depois dele tem sequência 0 e timestamp 0. STOP interrompe a aquisição; a fila do firmware ainda entrega os pacotes pendentes, e o aplicativo só encerra a coleta depois de cerca de 0,6 s sem pacotes. TARE inicia a tara no firmware, sinalizada pelo bit 1 de status enquanto estiver em andamento, e ao terminar grava as contagens atuais como deslocamento. MODO_BRUTO liga ou desliga o envio de contagens do ADC, sinalizado pelo bit 4. SET_CALIBRACAO grava o fator e o deslocamento de calibração.
 
 Os comandos não têm resposta direta. O efeito aparece na característica Estado, que notifica o aplicativo quando o status ou a calibração mudam; no caso de START e STOP, pelo bit 5.
 
@@ -94,7 +96,7 @@ A característica Estado tem 13 bytes em little-endian:
 | 5 | 4 | calibration_factor | float32 |
 | 9 | 4 | calibration_offset | int32 |
 
-`version` é a versão do protocolo, 2. `status` usa os mesmos bits do pacote de medição. `rate_hz` é a taxa de amostragem em hertz. `calibration_factor` é o fator em mN por contagem e `calibration_offset` é o deslocamento em contagens, gravados por SET_CALIBRACAO; o deslocamento também é gravado por TARE.
+`version` é a versão do protocolo, 2. `status` usa os mesmos bits do pacote de medição. `rate_hz` é a taxa nominal de amostragem em hertz, 1200; o tempo das amostras vem sempre dos timestamps. `calibration_factor` é o fator em mN por contagem e `calibration_offset` é o deslocamento em contagens, gravados por SET_CALIBRACAO; o deslocamento também é gravado por TARE.
 
 A característica notifica o aplicativo quando `status`, `calibration_factor` ou `calibration_offset` mudam, e pode ser lida a qualquer momento.
 

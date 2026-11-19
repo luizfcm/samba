@@ -9,6 +9,7 @@ const _gravidadeMs2 = 9.81;
 class PontoSalto {
   const PontoSalto({
     required this.tempoS,
+    required this.forcaN,
     required this.aceleracaoMs2,
     required this.velocidadeMs,
     required this.potenciaW,
@@ -16,6 +17,7 @@ class PontoSalto {
 
   /// Segundos desde a primeira amostra da série.
   final double tempoS;
+  final double forcaN;
   final double aceleracaoMs2;
   final double velocidadeMs;
   final double potenciaW;
@@ -30,6 +32,13 @@ class ResultadoSaltoIndividual {
     required this.velocidadeDecolagemMs,
     required this.potenciaMaximaW,
     required this.forcaMaximaN,
+    required this.velocidadeMinimaMs,
+    required this.tempoFrenagemS,
+    required this.impulsoExcentricoNs,
+    required this.rfdFrenagemNPorS,
+    required this.impulsoConcentricoNs,
+    required this.forcaMaximaConcentricaN,
+    required this.potenciaMediaConcentricaW,
     required List<PontoSalto> pontos,
   }) : pontos = List.unmodifiable(pontos);
 
@@ -40,6 +49,19 @@ class ResultadoSaltoIndividual {
   final double velocidadeDecolagemMs;
   final double potenciaMaximaW;
   final double forcaMaximaN;
+
+  /// Nulos sem contramovimento: a velocidade não fica negativa ou não volta a
+  /// zero antes da decolagem.
+  final double? velocidadeMinimaMs;
+  final double? tempoFrenagemS;
+  final double? impulsoExcentricoNs;
+  final double? rfdFrenagemNPorS;
+
+  final double impulsoConcentricoNs;
+  final double forcaMaximaConcentricaN;
+
+  /// Nula se a propulsão tiver uma amostra só.
+  final double? potenciaMediaConcentricaW;
 
   /// Do início do salto até a última amostra antes da decolagem.
   final List<PontoSalto> pontos;
@@ -65,6 +87,17 @@ class ResultadoSalto {
       soma += salto.alturaVooM;
     }
     return soma / saltos.length;
+  }
+
+  /// Decréscimo percentual em relação a repetir sempre a melhor altura pelo
+  /// voo; nulo com menos de dois saltos.
+  double? get indiceFadigaPercentual {
+    if (saltos.length < 2) return null;
+    var somaM = 0.0;
+    for (final salto in saltos) {
+      somaM += salto.alturaVooM;
+    }
+    return 100 * (1 - somaM / (melhorSalto!.alturaVooM * saltos.length));
   }
 
   /// Em empate, vale o primeiro salto.
@@ -214,6 +247,7 @@ class ProcessadorSalto implements ProcessadorExercicio<ResultadoSalto> {
       pontos.add(
         PontoSalto(
           tempoS: segundos(indice),
+          forcaN: forcaN,
           aceleracaoMs2: aceleracaoMs2,
           velocidadeMs: velocidadeMs,
           potenciaW: potenciaW,
@@ -222,6 +256,64 @@ class ProcessadorSalto implements ProcessadorExercicio<ResultadoSalto> {
       aceleracaoAnteriorMs2 = aceleracaoMs2;
       potenciaMaximaW = max(potenciaMaximaW, potenciaW);
       forcaMaximaN = max(forcaMaximaN, forcaN);
+    }
+
+    final pesoN = massaKg * _gravidadeMs2;
+    double integrar(int de, int ate, double Function(PontoSalto) valor) {
+      var integral = 0.0;
+      for (var indice = de + 1; indice <= ate; indice++) {
+        final anterior = pontos[indice - 1];
+        final atual = pontos[indice];
+        integral +=
+            (valor(anterior) + valor(atual)) /
+            2 *
+            (atual.tempoS - anterior.tempoS);
+      }
+      return integral;
+    }
+
+    var indiceMinimo = 0;
+    for (var indice = 1; indice < pontos.length; indice++) {
+      if (pontos[indice].velocidadeMs < pontos[indiceMinimo].velocidadeMs) {
+        indiceMinimo = indice;
+      }
+    }
+    int? pontoMaisBaixo;
+    if (pontos[indiceMinimo].velocidadeMs < 0) {
+      for (var indice = indiceMinimo + 1; indice < pontos.length; indice++) {
+        if (pontos[indice].velocidadeMs >= 0) {
+          pontoMaisBaixo = indice;
+          break;
+        }
+      }
+    }
+
+    double? tempoFrenagemS;
+    double? impulsoExcentricoNs;
+    double? rfdFrenagemNPorS;
+    if (pontoMaisBaixo != null) {
+      final inicioFrenagem = pontos[indiceMinimo];
+      final fimFrenagem = pontos[pontoMaisBaixo];
+      tempoFrenagemS = fimFrenagem.tempoS - inicioFrenagem.tempoS;
+      impulsoExcentricoNs = integrar(
+        indiceMinimo,
+        pontoMaisBaixo,
+        (ponto) => ponto.forcaN - pesoN,
+      );
+      rfdFrenagemNPorS =
+          (fimFrenagem.forcaN - inicioFrenagem.forcaN) / tempoFrenagemS;
+    }
+
+    final inicioPropulsao = pontoMaisBaixo ?? 0;
+    final fimPropulsao = pontos.length - 1;
+    final duracaoPropulsaoS =
+        pontos[fimPropulsao].tempoS - pontos[inicioPropulsao].tempoS;
+    var forcaMaximaConcentricaN = double.negativeInfinity;
+    for (var indice = inicioPropulsao; indice <= fimPropulsao; indice++) {
+      forcaMaximaConcentricaN = max(
+        forcaMaximaConcentricaN,
+        pontos[indice].forcaN,
+      );
     }
 
     return ResultadoSaltoIndividual(
@@ -235,6 +327,26 @@ class ProcessadorSalto implements ProcessadorExercicio<ResultadoSalto> {
       velocidadeDecolagemMs: velocidadeMs,
       potenciaMaximaW: potenciaMaximaW,
       forcaMaximaN: forcaMaximaN,
+      velocidadeMinimaMs: pontoMaisBaixo == null
+          ? null
+          : pontos[indiceMinimo].velocidadeMs,
+      tempoFrenagemS: tempoFrenagemS,
+      impulsoExcentricoNs: impulsoExcentricoNs,
+      rfdFrenagemNPorS: rfdFrenagemNPorS,
+      impulsoConcentricoNs: integrar(
+        inicioPropulsao,
+        fimPropulsao,
+        (ponto) => ponto.forcaN - pesoN,
+      ),
+      forcaMaximaConcentricaN: forcaMaximaConcentricaN,
+      potenciaMediaConcentricaW: duracaoPropulsaoS > 0
+          ? integrar(
+                  inicioPropulsao,
+                  fimPropulsao,
+                  (ponto) => ponto.potenciaW,
+                ) /
+                duracaoPropulsaoS
+          : null,
       pontos: pontos,
     );
   }

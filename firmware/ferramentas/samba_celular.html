@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SAMBA no celular</title>
+<style>
+  :root {
+    --fundo: #f4f6f8; --cartao: #ffffff; --texto: #1d2733; --suave: #5b6b7c; --borda: #d7dee6;
+    --azul: #1f5fa8; --verde: #2e8b57; --laranja: #d35400; --vermelho: #c0392b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --fundo: #11161c; --cartao: #1a222b; --texto: #e6edf3; --suave: #9aa9b8; --borda: #2c3a48; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fundo); color: var(--texto);
+         font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 12px 16px 40px; }
+  h1 { font-size: 20px; margin: 4px 0 2px; }
+  .sub { color: var(--suave); font-size: 13px; margin-bottom: 10px; }
+  .cartao { background: var(--cartao); border: 1px solid var(--borda); border-radius: 12px; padding: 12px; margin: 10px 0; }
+  .botoes { display: flex; flex-wrap: wrap; gap: 8px; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 11px 14px; min-height: 44px;
+           background: var(--azul); color: #fff; flex: 1 1 auto; }
+  button.sec { background: transparent; color: var(--azul); border: 1.5px solid var(--azul); }
+  button:disabled { opacity: .4; }
+  #estado { font-weight: 600; }
+  .ok { color: var(--verde); } .erro { color: var(--vermelho); } .aviso { color: var(--laranja); }
+  #valor { font-size: 30px; font-weight: 800; text-align: center; margin: 4px 0; min-height: 40px; }
+  canvas { width: 100%; height: 260px; display: block; border-radius: 8px; }
+  .numeros { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; text-align: center; margin-top: 8px; }
+  .numeros b { display: block; font-size: 18px; }
+  .numeros span { font-size: 12px; color: var(--suave); }
+  label { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+  td, th { border-bottom: 1px solid var(--borda); padding: 5px 4px; text-align: center; }
+  #log { font: 12px/1.35 ui-monospace, Consolas, monospace; white-space: pre-wrap; max-height: 180px; overflow: auto;
+         color: var(--suave); }
+  #resumoTeste { font-weight: 700; margin-top: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SAMBA — leitura pelo Bluetooth</h1>
+  <div class="sub">Chrome no Android (Web Bluetooth). Força estimada pelos dados da célula, sem calibração.</div>
+
+  <div class="cartao">
+    <div class="botoes">
+      <button id="bConectar">Conectar</button>
+      <button id="bDesconectar" class="sec" disabled>Desconectar</button>
+    </div>
+    <div style="margin-top:8px">Estado: <span id="estado">desconectado</span></div>
+    <div id="bits" class="sub" style="margin:2px 0 0"></div>
+  </div>
+
+  <div class="cartao">
+    <div class="botoes">
+      <button id="bIniciar" disabled>Iniciar leitura</button>
+      <button id="bParar" class="sec" disabled>Parar</button>
+      <button id="bTara" class="sec" disabled>Tara</button>
+    </div>
+    <div id="valor">—</div>
+    <canvas id="grafico"></canvas>
+    <div class="numeros">
+      <div><b id="nTaxa">0</b><span>leituras/s</span></div>
+      <div><b id="nPacotes">0</b><span>pacotes</span></div>
+      <div><b id="nPorPacote">0</b><span>leituras/pacote</span></div>
+      <div><b id="nPerdidas">0</b><span>perdidas</span></div>
+    </div>
+    <label><input type="checkbox" id="cInverte"> A tração aparece para baixo (inverter os rótulos)</label>
+  </div>
+
+  <div class="cartao">
+    <b>Teste de conexão</b>
+    <div class="sub" style="margin:2px 0 8px">Conecta e desconecta várias vezes seguidas e conta quantas funcionaram
+      (cada ciclo: conectar → ler 3 s → parar → desconectar). Use em ambientes diferentes.</div>
+    <div class="botoes">
+      <button id="bTeste" disabled>Testar conexão (10 ciclos)</button>
+    </div>
+    <div id="resumoTeste"></div>
+    <table id="tabTeste" hidden>
+      <thead><tr><th>Ciclo</th><th>Resultado</th><th>Conexão</th><th>Pacotes</th><th>Perdidas</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="cartao">
+    <b>Registro</b>
+    <div id="log"></div>
+  </div>
+</main>
+
+<script>
+"use strict";
+// ======================================================================= protocolo BLE v2 (protocolo_ble_v2.md)
+const UUID_SERVICO  = "1d770001-fc8b-4e8e-aa34-c86e1b9eeaf5";
+const UUID_MEDICAO  = "1d770002-fc8b-4e8e-aa34-c86e1b9eeaf5";
+const UUID_CONTROLE = "1d770003-fc8b-4e8e-aa34-c86e1b9eeaf5";
+const UUID_ESTADO   = "1d770004-fc8b-4e8e-aa34-c86e1b9eeaf5";
+const OP_START = 0x01, OP_STOP = 0x02, OP_TARE = 0x03, OP_MODO_BRUTO = 0x04;
+const G = 9.80665;
+const BITS = ["saturação", "tara em andamento", "sem calibração", "erro no ADC", "modo bruto", "aquisição"];
+
+// Decodifica um pacote de medição (mesmas regras do aplicativo e do cliente em Python).
+function decodificaPacote(dv) {
+  if (dv.byteLength < 16) throw new Error("pacote com " + dv.byteLength + " bytes");
+  const versao = dv.getUint8(0), n = dv.getUint8(1), status = dv.getUint16(2, true);
+  const seq = dv.getUint32(4, true), t0 = Number(dv.getBigUint64(8, true));
+  if (versao !== 2) throw new Error("versão " + versao);
+  if (n === 0 || dv.byteLength !== 16 + 6 * n) throw new Error("tamanho " + dv.byteLength + " para " + n + " leituras");
+  const amostras = [];
+  let t = t0;
+  for (let i = 0; i < n; i++) {
+    const mN = dv.getInt32(16 + 6 * i, true), dt = dv.getUint16(20 + 6 * i, true);
+    if (i === 0 && dt !== 0) throw new Error("delta da 1a leitura diferente de 0");
+    if (i > 0 && dt === 0) throw new Error("delta zero na leitura " + i);
+    t += dt;
+    amostras.push({ seq: seq + i, t_us: t, mN: mN });
+  }
+  return { status, seq, n, amostras };
+}
+
+function decodificaEstado(dv) {
+  if (dv.byteLength !== 13) throw new Error("estado com " + dv.byteLength + " bytes");
+  return { versao: dv.getUint8(0), status: dv.getUint16(1, true), taxa: dv.getUint16(3, true),
+           fator: dv.getFloat32(5, true), desloc: dv.getInt32(9, true) };
+}
+
+function textoBits(st) {
+  const ativos = BITS.filter((_, i) => st & (1 << i));
+  return ativos.length ? ativos.join(" · ") : "sem avisos";
+}
+
+// ======================================================================= buffer da janela visível + média de 50 ms
+class Janela {
+  constructor(capacidade) {
+    this.cap = capacidade;
+    this.t = new Float64Array(capacidade);    // s
+    this.y = new Float32Array(capacidade);    // kgf, leitura individual
+    this.m = new Float32Array(capacidade);    // kgf, média móvel de 50 ms
+    this.limpa();
+  }
+  limpa() { this.ini = 0; this.n = 0; this.fila = []; this.soma = 0; }
+  // média de 58 leituras = 50 ms a ~1165 leituras/s = 3 ciclos de 60 Hz: anula a interferência da rede
+  adiciona(t, y, nMedia = 58) {
+    this.fila.push(y); this.soma += y;
+    if (this.fila.length > nMedia) this.soma -= this.fila.shift();
+    const i = (this.ini + this.n) % this.cap;
+    this.t[i] = t; this.y[i] = y; this.m[i] = this.soma / this.fila.length;
+    if (this.n < this.cap) this.n++; else this.ini = (this.ini + 1) % this.cap;
+  }
+  idx(k) { return (this.ini + k) % this.cap; }
+  ultimo() { return this.n ? this.idx(this.n - 1) : -1; }
+}
+
+// ======================================================================= estado da página
+const JANELA_S = 10;
+const janela = new Janela(Math.ceil(JANELA_S * 1300));
+let dispositivo = null, servidor = null, chMedicao = null, chControle = null, chEstado = null;
+let lendo = false, ultimoSeq = null, pacotes = 0, perdidas = 0, erros = 0, somaPorPacote = 0;
+let t0Sessao = null, ultimaTaxa = 0, contTaxa = 0, marcaTaxa = performance.now();
+let emTeste = false;
+const $ = (id) => document.getElementById(id);
+
+function registra(msg, classe) {
+  const h = new Date().toLocaleTimeString("pt-BR");
+  const div = document.createElement("div");
+  div.textContent = h + "  " + msg;
+  if (classe) div.className = classe;
+  $("log").prepend(div);
+}
+
+function mostraEstado(txt, classe) { $("estado").textContent = txt; $("estado").className = classe || ""; }
+
+function habilita(conectado) {
+  $("bConectar").disabled = conectado || emTeste;
+  $("bDesconectar").disabled = !conectado || emTeste;
+  $("bIniciar").disabled = !conectado || lendo || emTeste;
+  $("bParar").disabled = !conectado || !lendo || emTeste;
+  $("bTara").disabled = !conectado || emTeste;
+  $("bTeste").disabled = !dispositivo || emTeste;
+}
+
+function zeraContadores() {
+  ultimoSeq = null; pacotes = 0; perdidas = 0; erros = 0; somaPorPacote = 0; t0Sessao = null; janela.limpa();
+}
+
+// ======================================================================= Bluetooth
+function aoReceber(ev) {
+  let p;
+  try { p = decodificaPacote(ev.target.value); }
+  catch (e) { erros++; registra("pacote inválido: " + e.message, "erro"); return; }
+  if (ultimoSeq !== null && p.seq > ultimoSeq + 1) perdidas += p.seq - ultimoSeq - 1;
+  ultimoSeq = p.seq + p.n - 1;
+  pacotes++; somaPorPacote += p.n; contTaxa += p.n;
+  for (const a of p.amostras) {
+    if (t0Sessao === null) t0Sessao = a.t_us;
+    janela.adiciona((a.t_us - t0Sessao) / 1e6, a.mN / 1000 / G);
+  }
+}
+
+function aoMudarEstado(ev) {
+  try {
+    const e = decodificaEstado(ev.target.value);
+    $("bits").textContent = "Placa: " + textoBits(e.status) + " · " + e.taxa + " Hz";
+  } catch (_) { /* ignora */ }
+}
+
+function comTempo(promessa, ms, oque) {
+  return Promise.race([promessa, new Promise((_, rej) => setTimeout(() => rej(new Error(oque + ": tempo esgotado")), ms))]);
+}
+
+async function comando(...bytes) {
+  // Com o rádio congestionado a placa pode não ter buffer para RESPONDER (erro 0x11), mas o comando
+  // chega se for enviado sem pedir resposta ("write without response").
+  const dados = new Uint8Array(bytes);
+  try { await chControle.writeValueWithResponse(dados); return true; } catch (_) { /* tenta sem resposta */ }
+  for (let i = 0; i < 3; i++) {
+    try {
+      await chControle.writeValueWithoutResponse(dados);
+      registra("comando 0x" + bytes[0].toString(16) + " enviado sem resposta (rádio congestionado)", "aviso");
+      return true;
+    } catch (_) { await new Promise((r) => setTimeout(r, 200)); }
+  }
+  registra("comando 0x" + bytes[0].toString(16) + " não foi enviado", "erro");
+  return false;
+}
+
+async function esperaFimDoFluxo(limiteMs = 90000) {
+  // depois do STOP a placa ainda entrega o que estava na fila (até 60 s de leituras)
+  const t = performance.now();
+  while (performance.now() - t < limiteMs) {
+    const n = pacotes;
+    await new Promise((r) => setTimeout(r, 600));
+    if (pacotes === n) return true;
+  }
+  return false;
+}
+
+async function abreGatt() {
+  // remove os tratadores do ciclo anterior (o Chrome pode devolver os mesmos objetos: contaria em dobro)
+  if (chMedicao) chMedicao.removeEventListener("characteristicvaluechanged", aoReceber);
+  if (chEstado) chEstado.removeEventListener("characteristicvaluechanged", aoMudarEstado);
+  servidor = await comTempo(dispositivo.gatt.connect(), 15000, "conexão");
+  const svc = await comTempo(servidor.getPrimaryService(UUID_SERVICO), 10000, "serviço");
+  chMedicao = await svc.getCharacteristic(UUID_MEDICAO);
+  chControle = await svc.getCharacteristic(UUID_CONTROLE);
+  chEstado = await svc.getCharacteristic(UUID_ESTADO);
+  chMedicao.addEventListener("characteristicvaluechanged", aoReceber);
+  chEstado.addEventListener("characteristicvaluechanged", aoMudarEstado);
+  await chMedicao.startNotifications();
+  await chEstado.startNotifications();
+  aoMudarEstado({ target: { value: await chEstado.readValue() } });
+  await comando(OP_MODO_BRUTO, 0);
+}
+
+function aoDesconectar() {
+  lendo = false;
+  if (!emTeste) { mostraEstado("desconectado", "aviso"); registra("conexão encerrada", "aviso"); }
+  habilita(false);
+}
+
+async function conectar() {
+  if (!navigator.bluetooth) {
+    mostraEstado("este navegador não tem Bluetooth", "erro");
+    registra("Web Bluetooth indisponível: use o Chrome no Android (ou o app Bluefy no iPhone). " +
+             "Se abriu como arquivo e não funcionou, sirva a página por http (ver firmware/README.md).", "erro");
+    return;
+  }
+  try {
+    if (!dispositivo) {
+      dispositivo = await navigator.bluetooth.requestDevice({
+        filters: [{ name: "SAMBA" }, { services: [UUID_SERVICO] }], optionalServices: [UUID_SERVICO] });
+      dispositivo.addEventListener("gattserverdisconnected", aoDesconectar);
+    }
+    mostraEstado("conectando…");
+    const t = performance.now();
+    await abreGatt();
+    mostraEstado("conectado", "ok");
+    registra("conectado em " + ((performance.now() - t) / 1000).toFixed(1) + " s", "ok");
+    habilita(true);
+  } catch (e) {
+    mostraEstado("falha ao conectar", "erro");
+    registra("falha ao conectar: " + e.message, "erro");
+    try { dispositivo && dispositivo.gatt.connected && dispositivo.gatt.disconnect(); } catch (_) {}
+    habilita(false);
+  }
+}
+
+async function iniciar() {
+  zeraContadores();
+  if (await comando(OP_START)) { lendo = true; registra("leitura iniciada"); }
+  habilita(true);
+}
+async function parar() {
+  await comando(OP_STOP); lendo = false; registra("leitura parada"); habilita(true);
+}
+async function tara() {
+  const estava = lendo;
+  if (estava) await comando(OP_STOP);
+  $("valor").textContent = "tara: não toque na célula…";
+  await comando(OP_TARE);
+  await new Promise((r) => setTimeout(r, 1500));
+  registra("tara feita");
+  if (estava) await iniciar(); else $("valor").textContent = "—";
+}
+
+// ======================================================================= teste de conexão
+async function testeConexao(ciclos = 10, segundos = 3) {
+  emTeste = true; habilita(false);
+  const corpo = document.querySelector("#tabTeste tbody");
+  corpo.innerHTML = ""; $("tabTeste").hidden = false;
+  try { if (dispositivo.gatt.connected) { await comando(OP_STOP); dispositivo.gatt.disconnect(); } } catch (_) {}
+  let oks = 0; const tempos = [];
+  for (let k = 1; k <= ciclos; k++) {
+    $("resumoTeste").textContent = "ciclo " + k + " de " + ciclos + "…";
+    zeraContadores();
+    let ok = false, tCon = null, msg = "";
+    const t = performance.now();
+    try {
+      await abreGatt();
+      tCon = (performance.now() - t) / 1000;
+      await comando(OP_START);
+      await new Promise((r) => setTimeout(r, segundos * 1000));
+      const parou = (await comando(OP_STOP)) && (await esperaFimDoFluxo());
+      ok = pacotes > 0 && parou;
+      if (pacotes === 0) msg = "conectou, mas não chegou nenhum pacote";
+      else if (!parou) msg = "a placa não parou de enviar depois do STOP";
+    } catch (e) { msg = e.message; }
+    try { if (dispositivo.gatt.connected) dispositivo.gatt.disconnect(); } catch (_) {}
+    if (ok) { oks++; tempos.push(tCon); }
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td>" + k + "</td><td class='" + (ok ? "ok" : "erro") + "'>" + (ok ? "OK" : "FALHA") + "</td><td>" +
+      (tCon ? tCon.toFixed(1) + " s" : "—") + "</td><td>" + pacotes + "</td><td>" + perdidas + "</td>";
+    corpo.appendChild(tr);
+    if (msg) registra("ciclo " + k + ": " + msg, ok ? "aviso" : "erro");
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  const media = tempos.length ? (tempos.reduce((a, b) => a + b, 0) / tempos.length).toFixed(1) + " s" : "—";
+  $("resumoTeste").textContent = oks + " de " + ciclos + " ciclos OK (" + Math.round(100 * oks / ciclos) +
+    "%) · tempo médio para conectar: " + media;
+  $("resumoTeste").className = oks === ciclos ? "ok" : (oks >= ciclos * 0.8 ? "aviso" : "erro");
+  registra("teste de conexão: " + $("resumoTeste").textContent);
+  emTeste = false; lendo = false; mostraEstado("desconectado (fim do teste)"); habilita(false);
+}
+
+// ======================================================================= gráfico
+const cv = $("grafico"), ctx = cv.getContext("2d");
+function cor(nome) { return getComputedStyle(document.documentElement).getPropertyValue(nome).trim(); }
+
+function desenha() {
+  requestAnimationFrame(desenha);
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const inverte = $("cInverte").checked;
+  const acima = inverte ? "COMPRESSÃO" : "TRAÇÃO", abaixo = inverte ? "TRAÇÃO" : "COMPRESSÃO";
+
+  // escala simétrica: zero no meio, mínimo de ±2 kgf
+  let lim = 2;
+  for (let k = 0; k < janela.n; k++) lim = Math.max(lim, Math.abs(janela.y[janela.idx(k)]));
+  lim *= 1.2;
+  const iu = janela.ultimo(), tFim = iu >= 0 ? janela.t[iu] : JANELA_S;
+  const tIni = Math.max(janela.n ? janela.t[janela.idx(0)] : 0, tFim - JANELA_S);
+  const X = (t) => ((t - tIni) / JANELA_S) * W, Y = (v) => H / 2 - (v / lim) * (H / 2 - 4);
+
+  ctx.fillStyle = "rgba(46,139,87,.08)"; ctx.fillRect(0, 0, W, H / 2);
+  ctx.fillStyle = "rgba(211,84,0,.08)"; ctx.fillRect(0, H / 2, W, H / 2);
+  ctx.strokeStyle = cor("--borda"); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke();
+  ctx.font = "bold 13px system-ui"; ctx.fillStyle = cor("--verde"); ctx.fillText("▲ " + acima, 8, 18);
+  ctx.fillStyle = cor("--laranja"); ctx.fillText("▼ " + abaixo, 8, H - 8);
+  ctx.fillStyle = cor("--suave"); ctx.font = "11px system-ui";
+  ctx.fillText("±" + lim.toFixed(1).replace(".", ",") + " kgf", W - 70, 16);
+
+  if (janela.n > 1) {
+    // leituras individuais: faixa mínimo-máximo por coluna de pixels (rápido mesmo com 11 mil pontos)
+    const colMin = new Float32Array(Math.ceil(W) + 1).fill(Infinity), colMax = new Float32Array(Math.ceil(W) + 1).fill(-Infinity);
+    const colMed = new Float32Array(Math.ceil(W) + 1).fill(NaN);
+    for (let k = 0; k < janela.n; k++) {
+      const i = janela.idx(k), x = Math.round(X(janela.t[i]));
+      if (x < 0 || x > W) continue;
+      colMin[x] = Math.min(colMin[x], janela.y[i]); colMax[x] = Math.max(colMax[x], janela.y[i]); colMed[x] = janela.m[i];
+    }
+    ctx.strokeStyle = "rgba(140,155,170,.55)"; ctx.beginPath();
+    for (let x = 0; x <= W; x++) if (colMin[x] !== Infinity) { ctx.moveTo(x + .5, Y(colMax[x])); ctx.lineTo(x + .5, Y(colMin[x]) + .5); }
+    ctx.stroke();
+    ctx.strokeStyle = cor("--azul"); ctx.lineWidth = 2.5; ctx.beginPath(); let primeiro = true;
+    for (let x = 0; x <= W; x++) if (!isNaN(colMed[x])) { primeiro ? ctx.moveTo(x, Y(colMed[x])) : ctx.lineTo(x, Y(colMed[x])); primeiro = false; }
+    ctx.stroke();
+
+    const f = janela.m[iu];
+    if (Math.abs(f) < 0.5) { $("valor").textContent = "em repouso"; $("valor").style.color = cor("--suave"); }
+    else {
+      $("valor").textContent = (f > 0 ? acima : abaixo) + "  " + Math.abs(f).toFixed(1).replace(".", ",") + " kgf";
+      $("valor").style.color = f > 0 ? cor("--verde") : cor("--laranja");
+    }
+  }
+  const agora = performance.now();
+  if (agora - marcaTaxa >= 1000) { ultimaTaxa = contTaxa * 1000 / (agora - marcaTaxa); contTaxa = 0; marcaTaxa = agora; }
+  $("nTaxa").textContent = Math.round(ultimaTaxa);
+  $("nPacotes").textContent = pacotes;
+  $("nPorPacote").textContent = pacotes ? (somaPorPacote / pacotes).toFixed(0) : 0;
+  $("nPerdidas").textContent = perdidas;
+}
+
+// ======================================================================= botões
+$("bConectar").onclick = conectar;
+$("bDesconectar").onclick = async () => { try { if (lendo) await comando(OP_STOP); dispositivo.gatt.disconnect(); } catch (_) {} };
+$("bIniciar").onclick = iniciar;
+$("bParar").onclick = parar;
+$("bTara").onclick = tara;
+$("bTeste").onclick = () => testeConexao(10, 3);
+if (!navigator.bluetooth) registra("Este navegador não tem Web Bluetooth. Use o Chrome no Android.", "erro");
+else if (!window.isSecureContext) registra("Página aberta fora de contexto seguro: o Bluetooth pode ser bloqueado (ver firmware/README.md).", "aviso");
+requestAnimationFrame(desenha);
+</script>
+</body>
+</html>

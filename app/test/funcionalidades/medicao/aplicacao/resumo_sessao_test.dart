@@ -56,6 +56,47 @@ void main() {
       expect(salto.massaKg, closeTo(75, 1e-9));
     });
 
+    test('traz a rfd e a força sustentada da repetição de maior pico', () {
+      final resumo = resumirSessao(
+        criarSessao(Exercicio.remada, gerarSerieIsometria(ruidoN: 0)),
+      ) as ResumoIsometria;
+
+      // Rampa de 400 N em 0,5 s: 800 N/s, ou 200 %Fmáx/s.
+      expect(resumo.rfdMaximaNPorS, closeTo(800, 1e-6));
+      expect(resumo.rfdMaximaPercentualPorS, closeTo(200, 1e-6));
+      expect(resumo.forcaSustentadaN, closeTo(400, 1e-9));
+      expect(resumo.coeficienteVariacaoPercentual, closeTo(0, 1e-9));
+    });
+
+    test('traz a fadiga e as fases do melhor salto', () {
+      final resumo = resumirSessao(
+        criarSessao(Exercicio.salto, gerarSerieSalto(ruidoN: 0)),
+      ) as ResumoSalto;
+
+      // Mesmos valores físicos da série: m × v decolagem = 75 × 1,962.
+      expect(resumo.indiceFadigaPercentual, closeTo(0, 1e-9));
+      expect(resumo.impulsoConcentricoNs, closeTo(147.15, 147.15 * 0.01));
+      expect(resumo.potenciaMediaConcentricaW, closeTo(1632, 1632 * 0.01));
+      expect(resumo.tempoFrenagemS, closeTo(0.1065, 0.001));
+      expect(resumo.rfdFrenagemNPorS, closeTo(9025, 9025 * 0.01));
+    });
+
+    test('deixa nulas as métricas sem repetição ou salto', () {
+      final isometria = resumirSessao(
+        criarSessao(Exercicio.remada, List.filled(2000, 0)),
+      ) as ResumoIsometria;
+      final salto = resumirSessao(
+        criarSessao(Exercicio.salto, List.filled(3000, 735.75)),
+      ) as ResumoSalto;
+
+      expect(isometria.repeticoes, 0);
+      expect(isometria.rfdMaximaNPorS, isNull);
+      expect(isometria.forcaSustentadaN, isNull);
+      expect(salto.saltos, 0);
+      expect(salto.indiceFadigaPercentual, isNull);
+      expect(salto.potenciaMediaConcentricaW, isNull);
+    });
+
     test('indica quando o processador rejeita a série', () {
       final semRepouso = resumirSessao(
         criarSessao(Exercicio.salto, gerarSerieSalto().sublist(2000)),

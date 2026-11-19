@@ -20,6 +20,7 @@ class ControladorMedicao extends ChangeNotifier {
   int? _ultimoTimestampUs;
   int _amostrasPerdidas = 0;
   int _amostrasDescartadas = 0;
+  bool _inverterSinal = false;
   bool _encerrado = false;
 
   EstadoMedicao get estado => _estado;
@@ -30,11 +31,14 @@ class ControladorMedicao extends ChangeNotifier {
   int get amostrasPerdidas => _amostrasPerdidas;
   int get amostrasDescartadas => _amostrasDescartadas;
 
+  /// No salto a célula é comprimida e a fonte manda força negativa; a sessão
+  /// recebe a força com o sinal invertido, sempre positiva no exercício.
   Future<void> iniciar(Exercicio exercicio, {DateTime? inicio}) async {
     if (_estado == EstadoMedicao.medindo) {
       throw StateError('Já existe uma medição em andamento.');
     }
     _sessao = SessaoMedicao(exercicio: exercicio, inicio: inicio);
+    _inverterSinal = exercicio == Exercicio.salto;
     _ultimaSequencia = null;
     _ultimoTimestampUs = null;
     _amostrasPerdidas = 0;
@@ -56,8 +60,8 @@ class ControladorMedicao extends ChangeNotifier {
     }
   }
 
-  /// O estado só passa a finalizada depois que a fonte conclui a parada, mesmo
-  /// que ela falhe; amostras recebidas nesse intervalo são ignoradas.
+  /// Continua recebendo amostras até a fonte concluir a parada e só então
+  /// finaliza a sessão e passa a finalizada, mesmo que a parada falhe.
   Future<SessaoMedicao> finalizar({DateTime? termino}) async {
     final assinatura = _assinatura;
     if (_estado != EstadoMedicao.medindo || assinatura == null) {
@@ -68,9 +72,9 @@ class ControladorMedicao extends ChangeNotifier {
     _assinatura = null;
 
     try {
-      await assinatura.cancel();
       await _fonte.parar();
     } finally {
+      await assinatura.cancel();
       sessao.finalizar(termino: instante);
       _alterarEstado(EstadoMedicao.finalizada);
     }
@@ -106,7 +110,17 @@ class ControladorMedicao extends ChangeNotifier {
       return;
     }
     _ultimoTimestampUs = amostra.timestampUs;
-    _sessao!.adicionarAmostra(amostra);
+    _sessao!.adicionarAmostra(
+      _inverterSinal
+          ? AmostraForca(
+              sequencia: amostra.sequencia,
+              timestampUs: amostra.timestampUs,
+              // Subtrair de 0.0 evita -0.0 quando a força é zero.
+              forcaN: 0.0 - amostra.forcaN,
+              status: amostra.status,
+            )
+          : amostra,
+    );
   }
 
   void _alterarEstado(EstadoMedicao estado) {

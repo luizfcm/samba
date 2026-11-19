@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:samba_app/funcionalidades/medicao/dominio/processador_salto.dart';
 import 'package:samba_app/nucleo/aquisicao/series_simuladas.dart';
@@ -15,6 +17,43 @@ List<AmostraForca> amostras(List<double> forcasN) => [
 
 ResultadoSalto processar(List<double> forcasN) => const ProcessadorSalto()
     .processar(amostras: amostras(forcasN), parametros: {});
+
+ResultadoSaltoIndividual saltoComVoo(double tempoVooS) =>
+    ResultadoSaltoIndividual(
+      inicioS: 0,
+      decolagemS: 0,
+      aterrissagemS: tempoVooS,
+      tempoVooS: tempoVooS,
+      velocidadeDecolagemMs: 0,
+      potenciaMaximaW: 0,
+      forcaMaximaN: 0,
+      velocidadeMinimaMs: null,
+      tempoFrenagemS: null,
+      impulsoExcentricoNs: null,
+      rfdFrenagemNPorS: null,
+      impulsoConcentricoNs: 0,
+      forcaMaximaConcentricaN: 0,
+      potenciaMediaConcentricaW: null,
+      pontos: const [],
+    );
+
+List<double> serieSemContramovimento() {
+  const massaKg = 75.0;
+  const pesoN = massaKg * 9.81;
+  // Propulsão de 0,3 s a partir do repouso até v = g × 0,4 / 2.
+  const amplitudeMs2 = 9.81 * 0.4 / 2 * pi / (2 * 0.3);
+  final propulsao = [
+    for (var indice = 0; indice < 300; indice++)
+      massaKg * (9.81 + amplitudeMs2 * sin(pi * indice / 300)),
+  ];
+  return [
+    ...List.filled(2000, pesoN),
+    ...propulsao,
+    ...List.filled(400, 0.0),
+    ...propulsao,
+    ...List.filled(2000, pesoN),
+  ];
+}
 
 void main() {
   group('ProcessadorSalto', () {
@@ -124,6 +163,74 @@ void main() {
       expect(resultado.saltos, isEmpty);
       expect(resultado.alturaMediaM, isNull);
       expect(resultado.melhorSalto, isNull);
+    });
+
+    test('separa a frenagem e a propulsão pela velocidade', () {
+      final salto = processar(gerarSerieSalto(ruidoN: 0)).saltos.first;
+
+      // Fim da descida: v = −2 × 4 × 0,3 / π. A integração começa 11 ms
+      // depois do início da descida, por isso a tolerância de 5 mm/s.
+      expect(salto.velocidadeMinimaMs, closeTo(-0.764, 0.005));
+      // Retorno a v = 0 após 0,1065 s de propulsão, com amostras de 1 ms.
+      expect(salto.tempoFrenagemS, closeTo(0.1065, 0.001));
+      // m × |v mín| = 75 × 0,764 e m × v decolagem = 75 × 1,962.
+      expect(salto.impulsoExcentricoNs, closeTo(57.30, 57.30 * 0.01));
+      expect(salto.impulsoConcentricoNs, closeTo(147.15, 147.15 * 0.01));
+      // m × (g + A2), com A2 = (1,962 + 0,764) × π / 0,6.
+      expect(salto.forcaMaximaConcentricaN, closeTo(1806, 1));
+      // m × (g × Δh + v²/2) / Δt na propulsão.
+      expect(salto.potenciaMediaConcentricaW, closeTo(1632, 1632 * 0.01));
+      // (1697 N − m × g) / 0,1065 s.
+      expect(salto.rfdFrenagemNPorS, closeTo(9025, 9025 * 0.01));
+      expect(salto.pontos.first.forcaN, closeTo(75 * 9.81, 75 * 9.81 * 0.05));
+    });
+
+    test('começa a propulsão no início do salto sem contramovimento', () {
+      final resultado = processar(serieSemContramovimento());
+      final salto = resultado.saltos.single;
+
+      expect(salto.velocidadeMinimaMs, isNull);
+      expect(salto.tempoFrenagemS, isNull);
+      expect(salto.impulsoExcentricoNs, isNull);
+      expect(salto.rfdFrenagemNPorS, isNull);
+      // Sem frenagem, o impulso concêntrico vai de v = 0 até a decolagem.
+      expect(
+        salto.impulsoConcentricoNs,
+        closeTo(resultado.massaKg * salto.velocidadeDecolagemMs, 1e-9),
+      );
+      expect(salto.forcaMaximaConcentricaN, salto.forcaMaximaN);
+      expect(salto.potenciaMediaConcentricaW, greaterThan(0));
+    });
+
+    test('calcula o índice de fadiga pelas alturas', () {
+      final resultado = ResultadoSalto(
+        massaKg: 75,
+        saltos: [saltoComVoo(0.4), saltoComVoo(0.3), saltoComVoo(0.2)],
+      );
+
+      // Alturas proporcionais a 0,16, 0,09 e 0,04:
+      // 100 × (1 − 0,29 / (0,16 × 3)) = 39,583 %.
+      expect(resultado.indiceFadigaPercentual, closeTo(39.583, 0.001));
+    });
+
+    test('não há fadiga entre saltos iguais da série simulada', () {
+      final resultado = processar(gerarSerieSalto(ruidoN: 0));
+
+      expect(resultado.indiceFadigaPercentual, closeTo(0, 1e-9));
+    });
+
+    test('não calcula o índice de fadiga com menos de dois saltos', () {
+      expect(
+        ResultadoSalto(
+          massaKg: 75,
+          saltos: [saltoComVoo(0.4)],
+        ).indiceFadigaPercentual,
+        isNull,
+      );
+      expect(
+        ResultadoSalto(massaKg: 75, saltos: []).indiceFadigaPercentual,
+        isNull,
+      );
     });
 
     test('rejeita timestamps fora de ordem', () {

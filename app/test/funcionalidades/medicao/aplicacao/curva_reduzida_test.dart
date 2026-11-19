@@ -57,6 +57,15 @@ void main() {
       expect(curva.last.tempoS, lessThan(92));
     });
 
+    test('mede o tempo a partir da origem informada', () {
+      final curva = reduzirCurva([
+        amostra(1000000, 10),
+        amostra(1500000, 30),
+      ], origemUs: 500000);
+
+      expect(pares(curva), [(0.5, 10.0), (1.0, 30.0)]);
+    });
+
     test('devolve lista vazia sem amostras', () {
       expect(reduzirCurva([]), isEmpty);
     });

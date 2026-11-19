@@ -10,7 +10,9 @@ Uma `FonteForca` entrega `AmostraForca` (sequência, timestamp em µs, força em
 
 ## Controlador
 
-`ControladorMedicao` cria a sessão, inicia e para a fonte e passa pelos estados `ociosa`, `medindo` e `finalizada`, notificando só nas mudanças de estado. Amostras cuja sequência ou timestamp não avance são descartadas e contadas, e saltos de sequência são contados como perdas. A interface fala com o controlador e a sessão, nunca com a fonte.
+`ControladorMedicao` cria a sessão, inicia e para a fonte e passa pelos estados `ociosa`, `medindo` e `finalizada`, notificando só nas mudanças de estado. Ao finalizar, continua recebendo amostras até a fonte concluir `parar()`, o que ela faz quando não há mais amostras a entregar. Amostras cuja sequência ou timestamp não avance são descartadas e contadas, e saltos de sequência são contados como perdas. A interface fala com o controlador e a sessão, nunca com a fonte.
+
+A fonte entrega a força com o sinal do equipamento: tração positiva, compressão negativa. O controlador inverte o sinal no salto, em que a célula é comprimida, e o mantém em remada e extensora. Da sessão em diante, processadores, gráficos e banco veem a força do exercício sempre positiva.
 
 ## Sessão
 

@@ -3,7 +3,7 @@ import '../../../nucleo/modelos/amostra_forca.dart';
 class PontoCurva {
   const PontoCurva({required this.tempoS, required this.forcaN});
 
-  /// Segundos desde a primeira amostra.
+  /// Segundos desde a origem, por padrão a primeira amostra.
   final double tempoS;
   final double forcaN;
 }
@@ -13,15 +13,17 @@ class PontoCurva {
 List<PontoCurva> reduzirCurva(
   List<AmostraForca> amostras, {
   int maximoPontos = 1500,
+  int? origemUs,
 }) {
   if (maximoPontos < 1) {
     throw ArgumentError('O número máximo de pontos deve ser positivo.');
   }
   if (amostras.isEmpty) return const [];
 
-  final origemUs = amostras.first.timestampUs;
+  final inicioUs = amostras.first.timestampUs;
+  final referenciaUs = origemUs ?? inicioUs;
   PontoCurva ponto(AmostraForca amostra) => PontoCurva(
-    tempoS: (amostra.timestampUs - origemUs) / 1e6,
+    tempoS: (amostra.timestampUs - referenciaUs) / 1e6,
     forcaN: amostra.forcaN,
   );
 
@@ -29,13 +31,13 @@ List<PontoCurva> reduzirCurva(
     return List.unmodifiable(amostras.map(ponto));
   }
 
-  final duracaoUs = amostras.last.timestampUs - origemUs;
+  final duracaoUs = amostras.last.timestampUs - inicioUs;
   final pontos = <PontoCurva>[];
   AmostraForca? maior;
   var intervaloAtual = 0;
   for (final amostra in amostras) {
     final intervalo =
-        (amostra.timestampUs - origemUs) * maximoPontos ~/ (duracaoUs + 1);
+        (amostra.timestampUs - inicioUs) * maximoPontos ~/ (duracaoUs + 1);
     if (intervalo != intervaloAtual && maior != null) {
       pontos.add(ponto(maior));
       maior = null;

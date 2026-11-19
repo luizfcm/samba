@@ -5,8 +5,12 @@ import 'package:samba_app/nucleo/aquisicao/series_simuladas.dart';
 
 void main() {
   group('serieSimulada', () {
-    test('usa a série de salto no salto', () {
-      expect(serieSimulada(Exercicio.salto), gerarSerieSalto());
+    test('usa a série de salto com força negativa no salto', () {
+      final serie = serieSimulada(Exercicio.salto);
+
+      expect(serie, [for (final forcaN in gerarSerieSalto()) -forcaN]);
+      expect(serie.where((forcaN) => forcaN == 0), isNotEmpty);
+      expect(serie.any((forcaN) => forcaN == 0 && forcaN.isNegative), isFalse);
     });
 
     test('usa a série de isometria na remada e na extensora', () {

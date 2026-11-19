@@ -6,7 +6,7 @@ O Sistema de Avaliação de Movimento e Biomecânica Aplicada (SAMBA) é um proj
 
 - `app/`: aplicativo Flutter e testes.
 - `docs/`: arquitetura, protocolo BLE v2 e métricas.
-- `firmware/`: firmware do ESP32-S3.
+- `firmware/`: firmware do ESP32-S3, testes de bancada e ferramentas de teste no PC e no celular ([detalhes](firmware/README.md)).
 - `analysis/`: análises de sinais.
 - `data/raw/` e `data/processed/`: dados brutos e processados.
 

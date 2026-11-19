@@ -13,11 +13,21 @@ class ResumoIsometria extends ResumoSessao {
     required this.maiorPicoN,
     required this.mediaPicosN,
     required this.repeticoes,
+    this.rfdMaximaNPorS,
+    this.rfdMaximaPercentualPorS,
+    this.forcaSustentadaN,
+    this.coeficienteVariacaoPercentual,
   });
 
   final double maiorPicoN;
   final double? mediaPicosN;
   final int repeticoes;
+
+  /// Da repetição de maior pico; nulos sem repetições ou sem valor nela.
+  final double? rfdMaximaNPorS;
+  final double? rfdMaximaPercentualPorS;
+  final double? forcaSustentadaN;
+  final double? coeficienteVariacaoPercentual;
 }
 
 class ResumoSalto extends ResumoSessao {
@@ -26,6 +36,11 @@ class ResumoSalto extends ResumoSessao {
     required this.alturaMediaM,
     required this.saltos,
     required this.massaKg,
+    this.indiceFadigaPercentual,
+    this.potenciaMediaConcentricaW,
+    this.impulsoConcentricoNs,
+    this.tempoFrenagemS,
+    this.rfdFrenagemNPorS,
   });
 
   /// Altura pelo tempo de voo; nula quando não há saltos.
@@ -33,6 +48,13 @@ class ResumoSalto extends ResumoSessao {
   final double? alturaMediaM;
   final int saltos;
   final double massaKg;
+  final double? indiceFadigaPercentual;
+
+  /// Do melhor salto; nulos sem saltos ou sem valor nele.
+  final double? potenciaMediaConcentricaW;
+  final double? impulsoConcentricoNs;
+  final double? tempoFrenagemS;
+  final double? rfdFrenagemNPorS;
 }
 
 class ResumoNaoProcessado extends ResumoSessao {
@@ -62,10 +84,18 @@ ResumoIsometria _resumirIsometria(List<AmostraForca> amostras) {
     amostras: amostras,
     parametros: const {},
   );
+  ResultadoRepeticao? melhor;
+  for (final repeticao in resultado.repeticoes) {
+    if (melhor == null || repeticao.picoN > melhor.picoN) melhor = repeticao;
+  }
   return ResumoIsometria(
     maiorPicoN: resultado.metricas.forcaMaximaN,
     mediaPicosN: resultado.mediaPicosN,
     repeticoes: resultado.repeticoes.length,
+    rfdMaximaNPorS: melhor?.rfdMaxima.rfdNPorS,
+    rfdMaximaPercentualPorS: melhor?.rfdMaxima.rfdPercentualPorS,
+    forcaSustentadaN: melhor?.forcaSustentadaN,
+    coeficienteVariacaoPercentual: melhor?.coeficienteVariacaoPercentual,
   );
 }
 
@@ -74,11 +104,17 @@ ResumoSalto _resumirSalto(List<AmostraForca> amostras) {
     amostras: amostras,
     parametros: const {},
   );
+  final melhor = resultado.melhorSalto;
   return ResumoSalto(
-    melhorAlturaM: resultado.melhorSalto?.alturaVooM,
+    melhorAlturaM: melhor?.alturaVooM,
     alturaMediaM: resultado.alturaMediaM,
     saltos: resultado.saltos.length,
     massaKg: resultado.massaKg,
+    indiceFadigaPercentual: resultado.indiceFadigaPercentual,
+    potenciaMediaConcentricaW: melhor?.potenciaMediaConcentricaW,
+    impulsoConcentricoNs: melhor?.impulsoConcentricoNs,
+    tempoFrenagemS: melhor?.tempoFrenagemS,
+    rfdFrenagemNPorS: melhor?.rfdFrenagemNPorS,
   );
 }
 
