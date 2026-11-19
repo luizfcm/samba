@@ -18,6 +18,7 @@ class FonteForcaFalsa implements FonteForca {
   final _controlador = StreamController<AmostraForca>.broadcast(sync: true);
   int chamadasIniciar = 0;
   int chamadasParar = 0;
+  int chamadasTarar = 0;
   Exception? erroAoIniciar;
   Exception? erroAoParar;
   Completer<void>? parada;
@@ -38,6 +39,11 @@ class FonteForcaFalsa implements FonteForca {
     chamadasParar++;
     await parada?.future;
     if (erroAoParar case final erro?) throw erro;
+  }
+
+  @override
+  Future<void> tarar() async {
+    chamadasTarar++;
   }
 
   void emitir(int sequencia, int timestampUs, [double forcaN = 0]) =>
@@ -286,6 +292,24 @@ void main() {
       expect(primeira.quantidadeAmostras, 2);
       expect(fonte.chamadasIniciar, 2);
       expect(notificacoes, 3);
+    });
+
+    test('tara a fonte fora de uma medição', () async {
+      await controlador.tarar();
+      await controlador.iniciar(Exercicio.remada, inicio: inicio);
+      await controlador.finalizar(termino: termino);
+      await controlador.tarar();
+
+      expect(fonte.chamadasTarar, 2);
+      expect(notificacoes, 2);
+    });
+
+    test('rejeita tarar durante uma medição', () async {
+      await controlador.iniciar(Exercicio.remada, inicio: inicio);
+
+      await expectLater(controlador.tarar(), throwsStateError);
+      expect(fonte.chamadasTarar, 0);
+      expect(controlador.estado, EstadoMedicao.medindo);
     });
 
     test('volta a ociosa quando a fonte falha ao iniciar', () async {

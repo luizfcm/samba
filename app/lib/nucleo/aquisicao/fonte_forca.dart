@@ -10,4 +10,7 @@ abstract interface class FonteForca {
   /// Conclui quando não houver mais amostras a entregar; a parada permite uma
   /// nova aquisição no mesmo Stream.
   Future<void> parar();
+
+  /// Conclui quando o equipamento termina de gravar o novo zero.
+  Future<void> tarar();
 }

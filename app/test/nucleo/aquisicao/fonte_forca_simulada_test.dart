@@ -156,6 +156,13 @@ void main() {
       expect(segundas.first.sequencia, 0);
     });
 
+    test('tara na hora sem emitir amostras', () async {
+      await fonte.tarar();
+      await aguardarEntregas();
+
+      expect(recebidas, isEmpty);
+    });
+
     test('compartilha as mesmas amostras entre assinantes', () async {
       final primeiraColeta = coletarAmostras(fonte, 20);
       final segundaColeta = coletarAmostras(fonte, 20);
