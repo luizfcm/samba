@@ -117,6 +117,7 @@ class ProcessadorSalto implements ProcessadorExercicio<ResultadoSalto> {
     this.forcaMinimaRepousoN = 200,
     this.fracaoVoo = 0.1,
     this.duracaoMinimaVooUs = 100000,
+    this.duracaoMaximaVooUs = 1000000,
     this.fracaoRepouso = 0.05,
     this.duracaoMinimaRepousoUs = 100000,
   });
@@ -128,6 +129,9 @@ class ProcessadorSalto implements ProcessadorExercicio<ResultadoSalto> {
   final double forcaMinimaRepousoN;
   final double fracaoVoo;
   final int duracaoMinimaVooUs;
+
+  /// Trechos mais longos sem força são a pessoa fora da plataforma, não voo.
+  final int duracaoMaximaVooUs;
   final double fracaoRepouso;
   final int duracaoMinimaRepousoUs;
 
@@ -212,7 +216,10 @@ class ProcessadorSalto implements ProcessadorExercicio<ResultadoSalto> {
       } else if (decolagem != null) {
         final duracaoUs =
             amostras[indice].timestampUs - amostras[decolagem].timestampUs;
-        if (duracaoUs >= duracaoMinimaVooUs) voos.add((decolagem, indice));
+        if (duracaoUs >= duracaoMinimaVooUs &&
+            duracaoUs <= duracaoMaximaVooUs) {
+          voos.add((decolagem, indice));
+        }
         decolagem = null;
       }
     }

@@ -71,9 +71,9 @@ São descartados os trechos com menos de duas amostras ou com duração menor qu
 
 ## Salto
 
-`ProcessadorSalto({duracaoRepousoInicialUs = 1000000, forcaMinimaRepousoN = 200, fracaoVoo = 0.1, duracaoMinimaVooUs = 100000, fracaoRepouso = 0.05, duracaoMinimaRepousoUs = 100000})` retorna `ResultadoSalto`, com g = 9,81 m/s². O mapa de parâmetros não é usado.
+`ProcessadorSalto({duracaoRepousoInicialUs = 1000000, forcaMinimaRepousoN = 200, fracaoVoo = 0.1, duracaoMinimaVooUs = 100000, duracaoMaximaVooUs = 1000000, fracaoRepouso = 0.05, duracaoMinimaRepousoUs = 100000})` retorna `ResultadoSalto`, com g = 9,81 m/s². O mapa de parâmetros não é usado.
 
-A massa é a média da força, dividida por g, na primeira janela de `duracaoRepousoInicialUs` em que a média passa de `forcaMinimaRepousoN` e o desvio padrão fica abaixo de 2% da média; o mínimo evita confundir a plataforma vazia com a pessoa parada. O peso é `massa × g`, e a busca de saltos começa no fim dessa janela. Um voo é um trecho com força menor que `fracaoVoo × peso` que dura pelo menos `duracaoMinimaVooUs`: a decolagem é a primeira amostra do trecho e a aterrissagem, a primeira amostra depois dele. O início do salto é a última amostra do último trecho antes da decolagem em que a força fica dentro de `peso ± fracaoRepouso × peso` por pelo menos `duracaoMinimaRepousoUs`. A busca não passa da aterrissagem do salto anterior; sem esse repouso, o salto é ignorado.
+A massa é a média da força, dividida por g, na primeira janela de `duracaoRepousoInicialUs` em que a média passa de `forcaMinimaRepousoN` e o desvio padrão fica abaixo de 2% da média; o mínimo evita confundir a plataforma vazia com a pessoa parada. O peso é `massa × g`, e a busca de saltos começa no fim dessa janela. Um voo é um trecho com força menor que `fracaoVoo × peso` que dura de `duracaoMinimaVooUs` a `duracaoMaximaVooUs`; trechos mais longos são a pessoa fora da plataforma e são ignorados. A decolagem é a primeira amostra do trecho e a aterrissagem, a primeira amostra depois dele. O início do salto é a última amostra do último trecho antes da decolagem em que a força fica dentro de `peso ± fracaoRepouso × peso` por pelo menos `duracaoMinimaRepousoUs`. A busca não passa da aterrissagem do salto anterior; sem esse repouso, o salto é ignorado.
 
 Do início até a última amostra antes da decolagem, cada `PontoSalto` traz:
 
