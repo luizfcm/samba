@@ -34,6 +34,9 @@ class FonteForcaSimulada implements FonteForca {
   @override
   Future<void> parar() async => _cancelarTemporizador();
 
+  @override
+  Future<void> tarar() async {}
+
   void _cancelarTemporizador() {
     _temporizador?.cancel();
     _temporizador = null;

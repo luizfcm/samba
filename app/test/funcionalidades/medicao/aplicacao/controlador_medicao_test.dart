@@ -6,18 +6,23 @@ import 'package:samba_app/funcionalidades/medicao/dominio/exercicio.dart';
 import 'package:samba_app/nucleo/aquisicao/fonte_forca.dart';
 import 'package:samba_app/nucleo/modelos/amostra_forca.dart';
 
-AmostraForca criarAmostra(int sequencia, int timestampUs, double forcaN) =>
-    AmostraForca(
-      sequencia: sequencia,
-      timestampUs: timestampUs,
-      forcaN: forcaN,
-      status: 0,
-    );
+AmostraForca criarAmostra(
+  int sequencia,
+  int timestampUs,
+  double forcaN, [
+  int status = 0,
+]) => AmostraForca(
+  sequencia: sequencia,
+  timestampUs: timestampUs,
+  forcaN: forcaN,
+  status: status,
+);
 
 class FonteForcaFalsa implements FonteForca {
   final _controlador = StreamController<AmostraForca>.broadcast(sync: true);
   int chamadasIniciar = 0;
   int chamadasParar = 0;
+  int chamadasTarar = 0;
   Exception? erroAoIniciar;
   Exception? erroAoParar;
   Completer<void>? parada;
@@ -40,8 +45,21 @@ class FonteForcaFalsa implements FonteForca {
     if (erroAoParar case final erro?) throw erro;
   }
 
-  void emitir(int sequencia, int timestampUs, [double forcaN = 0]) =>
-      _controlador.add(criarAmostra(sequencia, timestampUs, forcaN));
+  @override
+  Future<void> tarar() async {
+    chamadasTarar++;
+  }
+
+  void emitir(
+    int sequencia,
+    int timestampUs, [
+    double forcaN = 0,
+    int status = 0,
+  ]) => _controlador.add(criarAmostra(sequencia, timestampUs, forcaN, status));
+
+  void emitirErro(Object erro) => _controlador.addError(erro);
+
+  Future<void> encerrar() => _controlador.close();
 }
 
 void main() {
@@ -286,6 +304,94 @@ void main() {
       expect(primeira.quantidadeAmostras, 2);
       expect(fonte.chamadasIniciar, 2);
       expect(notificacoes, 3);
+    });
+
+    test('tara a fonte fora de uma medição', () async {
+      await controlador.tarar();
+      await controlador.iniciar(Exercicio.remada, inicio: inicio);
+      await controlador.finalizar(termino: termino);
+      await controlador.tarar();
+
+      expect(fonte.chamadasTarar, 2);
+      expect(notificacoes, 2);
+    });
+
+    test('rejeita tarar durante uma medição', () async {
+      await controlador.iniciar(Exercicio.remada, inicio: inicio);
+
+      await expectLater(controlador.tarar(), throwsStateError);
+      expect(fonte.chamadasTarar, 0);
+      expect(controlador.estado, EstadoMedicao.medindo);
+    });
+
+    test('interrompe a medição quando o fluxo da fonte falha', () async {
+      await controlador.iniciar(Exercicio.remada, inicio: inicio);
+      fonte.emitir(0, 0, 10);
+      fonte.emitir(1, 1000, 20);
+      fonte.emitirErro(
+        StateError('A conexão com o equipamento foi encerrada.'),
+      );
+
+      expect(controlador.estado, EstadoMedicao.finalizada);
+      expect(controlador.interrompida, isTrue);
+      expect(
+        controlador.motivoInterrupcao,
+        'A conexão com o equipamento foi encerrada.',
+      );
+      expect(controlador.sessao!.finalizada, isTrue);
+      expect(controlador.sessao!.quantidadeAmostras, 2);
+      expect(fonte.assinada, isFalse);
+      expect(fonte.chamadasParar, 1);
+      expect(notificacoes, 2);
+      await expectLater(controlador.finalizar(), throwsStateError);
+
+      await controlador.iniciar(Exercicio.remada, inicio: termino);
+      expect(controlador.interrompida, isFalse);
+      expect(controlador.motivoInterrupcao, isNull);
+    });
+
+    test('interrompe a medição quando o fluxo da fonte termina', () async {
+      await controlador.iniciar(Exercicio.remada, inicio: inicio);
+      fonte.emitir(0, 0, 10);
+      await fonte.encerrar();
+
+      expect(controlador.estado, EstadoMedicao.finalizada);
+      expect(controlador.interrompida, isTrue);
+      expect(controlador.sessao!.quantidadeAmostras, 1);
+    });
+
+    test('interrompe a medição quando a sequência recomeça', () async {
+      await controlador.iniciar(Exercicio.remada, inicio: inicio);
+      fonte.emitir(5000, 0);
+      fonte.emitir(5001, 1000);
+      fonte.emitir(4500, 2000);
+      expect(controlador.interrompida, isFalse);
+      expect(controlador.amostrasDescartadas, 1);
+
+      // 3 está mais de 1000 abaixo de 5001: o equipamento reiniciou.
+      fonte.emitir(3, 0);
+
+      expect(controlador.interrompida, isTrue);
+      expect(controlador.motivoInterrupcao, contains('sequência'));
+      expect(controlador.estado, EstadoMedicao.finalizada);
+      expect(sequenciasNaSessao(), [5000, 5001]);
+    });
+
+    test('conta as amostras com saturação e com erro no ADC', () async {
+      await controlador.iniciar(Exercicio.salto, inicio: inicio);
+      fonte.emitir(0, 0, 0, 0x01);
+      fonte.emitir(1, 1000, 0, 0x08);
+      fonte.emitir(2, 2000, 0, 0x09);
+      fonte.emitir(3, 3000, 0, 0x24);
+      fonte.emitir(3, 4000, 0, 0x01);
+
+      expect(controlador.amostrasSaturadas, 2);
+      expect(controlador.amostrasComErroAdc, 2);
+
+      await controlador.finalizar(termino: termino);
+      await controlador.iniciar(Exercicio.salto, inicio: termino);
+      expect(controlador.amostrasSaturadas, 0);
+      expect(controlador.amostrasComErroAdc, 0);
     });
 
     test('volta a ociosa quando a fonte falha ao iniciar', () async {
