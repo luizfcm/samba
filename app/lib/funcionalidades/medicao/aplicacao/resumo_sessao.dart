@@ -63,33 +63,33 @@ class ResumoNaoProcessado extends ResumoSessao {
   final String motivo;
 }
 
-/// Uma série que o processador rejeita vira [ResumoNaoProcessado], sem exceção.
-ResumoSessao resumirSessao(SessaoMedicao sessao) {
-  try {
-    return switch (sessao.exercicio) {
-      Exercicio.remada ||
-      Exercicio.extensora => _resumirIsometria(sessao.amostras),
-      Exercicio.salto => _resumirSalto(sessao.amostras),
-      Exercicio.terra => const ResumoNaoProcessado(
-        'Não há processamento para o terra.',
-      ),
-    };
-  } on ArgumentError catch (erro) {
-    return ResumoNaoProcessado('${erro.message}');
-  }
-}
+/// Uma sessão sem dados suficientes vira [ResumoNaoProcessado], com o motivo
+/// para o usuário.
+ResumoSessao resumirSessao(SessaoMedicao sessao) => switch (sessao.exercicio) {
+  Exercicio.remada || Exercicio.extensora => _resumirIsometria(sessao.amostras),
+  Exercicio.salto => _resumirSalto(sessao.amostras),
+  Exercicio.terra => const ResumoNaoProcessado(
+    'Não há processamento para o terra.',
+  ),
+};
 
-ResumoIsometria _resumirIsometria(List<AmostraForca> amostras) {
+ResumoSessao _resumirIsometria(List<AmostraForca> amostras) {
   final resultado = const ProcessadorIsometria().processar(
     amostras: amostras,
     parametros: const {},
   );
+  final metricas = resultado.metricas;
+  if (metricas == null) {
+    return const ResumoNaoProcessado(
+      'A medição terminou antes de registrar dados suficientes.',
+    );
+  }
   ResultadoRepeticao? melhor;
   for (final repeticao in resultado.repeticoes) {
     if (melhor == null || repeticao.picoN > melhor.picoN) melhor = repeticao;
   }
   return ResumoIsometria(
-    maiorPicoN: resultado.metricas.forcaMaximaN,
+    maiorPicoN: metricas.forcaMaximaN,
     mediaPicosN: resultado.mediaPicosN,
     repeticoes: resultado.repeticoes.length,
     rfdMaximaNPorS: melhor?.rfdMaxima.rfdNPorS,
@@ -99,17 +99,30 @@ ResumoIsometria _resumirIsometria(List<AmostraForca> amostras) {
   );
 }
 
-ResumoSalto _resumirSalto(List<AmostraForca> amostras) {
-  final resultado = const ProcessadorSalto().processar(
+ResumoSessao _resumirSalto(List<AmostraForca> amostras) {
+  const processador = ProcessadorSalto();
+  final resultado = processador.processar(
     amostras: amostras,
     parametros: const {},
   );
+  final massaKg = resultado.massaKg;
+  if (massaKg == null) {
+    final duracaoUs = amostras.length < 2
+        ? 0
+        : amostras.last.timestampUs - amostras.first.timestampUs;
+    return ResumoNaoProcessado(
+      duracaoUs < processador.duracaoRepousoInicialUs
+          ? 'A medição terminou antes do primeiro segundo parado na plataforma.'
+          : 'Não houve um momento com a pessoa parada na plataforma para '
+                'estimar a massa.',
+    );
+  }
   final melhor = resultado.melhorSalto;
   return ResumoSalto(
     melhorAlturaM: melhor?.alturaVooM,
     alturaMediaM: resultado.alturaMediaM,
     saltos: resultado.saltos.length,
-    massaKg: resultado.massaKg,
+    massaKg: massaKg,
     indiceFadigaPercentual: resultado.indiceFadigaPercentual,
     potenciaMediaConcentricaW: melhor?.potenciaMediaConcentricaW,
     impulsoConcentricoNs: melhor?.impulsoConcentricoNs,

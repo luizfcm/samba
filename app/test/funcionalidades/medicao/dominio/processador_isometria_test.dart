@@ -54,12 +54,12 @@ void main() {
         amostra(750000, 30),
       ]);
 
-      expect(resultado.metricas.forcaMaximaN, 55);
+      expect(resultado.metricas!.forcaMaximaN, 55);
       expect(resultado.instantePicoS, 0.5);
-      expect(resultado.metricas.forcaMediaN, 33.75);
-      expect(resultado.metricas.duracaoS, 0.75);
+      expect(resultado.metricas!.forcaMediaN, 33.75);
+      expect(resultado.metricas!.duracaoS, 0.75);
       // (10 + 40) / 2 * 0.25 + (40 + 55) / 2 * 0.25 + (55 + 30) / 2 * 0.25.
-      expect(resultado.metricas.impulsoNs, closeTo(28.75, 1e-9));
+      expect(resultado.metricas!.impulsoNs, closeTo(28.75, 1e-9));
     });
 
     test('usa o primeiro instante quando há empate no pico', () {
@@ -70,7 +70,7 @@ void main() {
         amostra(400000, 20),
       ]);
 
-      expect(resultado.metricas.forcaMaximaN, 50);
+      expect(resultado.metricas!.forcaMaximaN, 50);
       expect(resultado.instantePicoS, 0.1);
     });
 
@@ -81,14 +81,14 @@ void main() {
         amostra(3100000, 15),
       ]);
 
-      expect(resultado.metricas.forcaMaximaN, 25);
+      expect(resultado.metricas!.forcaMaximaN, 25);
       expect(resultado.instantePicoS, 0.4);
     });
 
     test('informa instante zero quando o pico é a primeira amostra', () {
       final resultado = processar([amostra(1500000, 80), amostra(1600000, 60)]);
 
-      expect(resultado.metricas.forcaMaximaN, 80);
+      expect(resultado.metricas!.forcaMaximaN, 80);
       expect(resultado.instantePicoS, 0);
     });
 
@@ -99,7 +99,7 @@ void main() {
         amostra(600000, -12),
       ]);
 
-      expect(resultado.metricas.forcaMaximaN, -5);
+      expect(resultado.metricas!.forcaMaximaN, -5);
       expect(resultado.instantePicoS, 0.2);
     });
 
@@ -117,7 +117,7 @@ void main() {
 
       // Limiares de 20 N e 10 N sobre o pico de 100 N: os trechos são os
       // índices 1 a 5, 8 a 11 e 14 a 17, em passos de 0,1 s.
-      expect(resultado.metricas.forcaMaximaN, 100);
+      expect(resultado.metricas!.forcaMaximaN, 100);
       expect(resultado.instantePicoS, 0.1);
       expect(resultado.repeticoes, hasLength(3));
       expect(resultado.repeticoes.clear, throwsUnsupportedError);
@@ -156,7 +156,7 @@ void main() {
         amostra(300000, 0),
       ]);
 
-      expect(resultado.metricas.forcaMaximaN, 50);
+      expect(resultado.metricas!.forcaMaximaN, 50);
       expect(resultado.instantePicoS, 0.1);
       expect(resultado.repeticoes, isEmpty);
       expect(resultado.mediaPicosN, isNull);
@@ -246,9 +246,21 @@ void main() {
       }
     });
 
-    test('repassa os erros de validação das métricas', () {
-      expect(() => processar([]), throwsArgumentError);
-      expect(() => processar([amostra(0, 10)]), throwsArgumentError);
+    test('devolve resultado vazio com menos de duas amostras', () {
+      for (final amostras in [
+        <AmostraForca>[],
+        [amostra(0, 10)],
+      ]) {
+        final resultado = processar(amostras);
+
+        expect(resultado.metricas, isNull);
+        expect(resultado.instantePicoS, isNull);
+        expect(resultado.repeticoes, isEmpty);
+        expect(resultado.mediaPicosN, isNull);
+      }
+    });
+
+    test('repassa os erros de timestamps das métricas', () {
       expect(
         () => processar([amostra(100, 10), amostra(100, 20)]),
         throwsArgumentError,

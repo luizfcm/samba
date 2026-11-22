@@ -77,7 +77,8 @@ class ResultadoSalto {
     required List<ResultadoSaltoIndividual> saltos,
   }) : saltos = List.unmodifiable(saltos);
 
-  final double massaKg;
+  /// Nula quando não há repouso com a pessoa parada; então não há saltos.
+  final double? massaKg;
   final List<ResultadoSaltoIndividual> saltos;
 
   double? get alturaMediaM {
@@ -135,8 +136,9 @@ class ProcessadorSalto implements ProcessadorExercicio<ResultadoSalto> {
   final double fracaoRepouso;
   final int duracaoMinimaRepousoUs;
 
-  /// A massa vem do primeiro repouso estável; saltos antes dele ou sem repouso
-  /// antes da decolagem são ignorados. O mapa de parâmetros não é usado.
+  /// A massa vem do primeiro repouso estável; sem ele, o resultado vem vazio.
+  /// Saltos antes do repouso ou sem repouso antes da decolagem são ignorados.
+  /// O mapa de parâmetros não é usado.
   @override
   ResultadoSalto processar({
     required List<AmostraForca> amostras,
@@ -144,6 +146,7 @@ class ProcessadorSalto implements ProcessadorExercicio<ResultadoSalto> {
   }) {
     validarTimestamps(amostras);
     final repouso = _estimarRepouso(amostras);
+    if (repouso == null) return ResultadoSalto(massaKg: null, saltos: const []);
     final massaKg = repouso.massaKg;
     final pesoN = massaKg * _gravidadeMs2;
     final saltos = <ResultadoSaltoIndividual>[];
@@ -163,11 +166,12 @@ class ProcessadorSalto implements ProcessadorExercicio<ResultadoSalto> {
 
   /// Primeira janela de [duracaoRepousoInicialUs] com média acima de
   /// [forcaMinimaRepousoN] e desvio abaixo de 2% da média; [fim] é exclusivo.
-  ({double massaKg, int fim}) _estimarRepouso(List<AmostraForca> amostras) {
+  /// Nula se a série for mais curta que a janela ou não tiver esse repouso.
+  ({double massaKg, int fim})? _estimarRepouso(List<AmostraForca> amostras) {
     if (amostras.isEmpty ||
         amostras.last.timestampUs - amostras.first.timestampUs <
             duracaoRepousoInicialUs) {
-      throw ArgumentError('A série é mais curta que o repouso inicial.');
+      return null;
     }
 
     var somaN = 0.0;
@@ -202,7 +206,7 @@ class ProcessadorSalto implements ProcessadorExercicio<ResultadoSalto> {
       somaN -= saindoN;
       somaQuadrados -= saindoN * saindoN;
     }
-    throw ArgumentError('A série não tem um repouso com a pessoa parada.');
+    return null;
   }
 
   /// Pares (decolagem, aterrissagem); um voo sem aterrissagem é ignorado.
