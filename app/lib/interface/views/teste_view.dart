@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../funcionalidades/medicao/dominio/exercicio.dart';
 import '../core/app_colors.dart';
-
 import '../core/widgets/samba_botao.dart';
+import '../core/widgets/samba_pagina.dart';
 
 class TesteView extends StatefulWidget {
   const TesteView({super.key});
@@ -14,52 +13,15 @@ class TesteView extends StatefulWidget {
 }
 
 class _TesteViewState extends State<TesteView> {
-  String tipoExercicio = 'Isometria';
-  bool bluetoothConectado = false; // Estado do botão Bluetooth
-
+  String tipoExercicio = 'Remada (Isometria)';
+  bool bluetoothConectado = false; 
+  
   @override
   Widget build(BuildContext context) {
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      child: Scaffold(
-        backgroundColor: AppColors.azulEscuro,
-        body: SafeArea(
-          bottom: false,
-          child: Column(
-            children: [
-              _buildTopo(context),
-              Expanded(child: _folhaBranca(context)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTopo(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back, color: AppColors.branco),
-            onPressed: () => Navigator.pop(context),
-          ),
-          const Expanded(
-            child: Text(
-              'Novo Teste',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w500,
-                color: AppColors.branco,
-              ),
-            ),
-          ),
-          const SizedBox(width: 48),
-        ],
-      ),
-    );
+    return SambaPagina(
+      cabecalho: const SambaTopo(titulo: 'Novo Teste'),
+      child: _folhaBranca(context),
+    );    
   }
 
   Widget _folhaBranca(BuildContext context) {
@@ -78,7 +40,6 @@ class _TesteViewState extends State<TesteView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Botão Interativo de Conexão Bluetooth
           AnimatedContainer(
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeInOut,
@@ -168,20 +129,22 @@ class _TesteViewState extends State<TesteView> {
             ),
           ),
           const SizedBox(height: 14),
-          _opcaoModalidade('Isometria'),
+          _opcaoModalidade('Remada (Isometria)'),
+          const SizedBox(height: 10),
+          _opcaoModalidade('Extensora (Isometria)'),
           const SizedBox(height: 10),
           _opcaoModalidade('Salto Vertical'),
           const Spacer(),
           SambaBotao(
             rotulo: 'Iniciar Medição',
-            onPressed: () => Navigator.pushNamed(
-              context,
-              '/medicao',
-              arguments: tipoExercicio == 'Salto Vertical'
-                  ? Exercicio.salto
-                  : Exercicio.remada,
+            onPressed: () => Navigator.pushNamed(context, '/medicao',
+                arguments: switch (tipoExercicio) {
+                  'Salto Vertical' => Exercicio.salto,
+                  'Extensora (Isometria)' => Exercicio.extensora,
+                  _ => Exercicio.remada,
+                },
+              ),
             )
-          ),
         ],
       ),
     );

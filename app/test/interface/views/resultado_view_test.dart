@@ -62,7 +62,11 @@ void main() {
       );
       expect(find.text('Força de Pico'), findsOneWidget);
       expect(find.text('400 N'), findsOneWidget);
-      expect(find.text('5200 kgf/s'), findsOneWidget);
+      expect(find.text('RFD máxima'), findsOneWidget);
+      expect(find.text('RFD máxima relativa'), findsOneWidget);
+      expect(find.text('Força sustentada'), findsOneWidget);
+      expect(find.text('Variabilidade'), findsOneWidget);
+      expect(find.text('5200 kgf/s'), findsNothing);
     });
 
     testWidgets('mostra a melhor altura do salto em cm', (tester) async {
@@ -73,6 +77,12 @@ void main() {
 
       // h = 9,81 × 0,4² / 8 = 0,1962 m.
       expect(find.text('19,6 cm'), findsOneWidget);
+      expect(find.text('19,6 cm'), findsOneWidget);
+      expect(find.text('Índice de fadiga'), findsOneWidget);
+      expect(find.text('Potência média'), findsOneWidget);
+      expect(find.text('Impulso concêntrico'), findsOneWidget);
+      expect(find.text('Tempo de frenagem'), findsOneWidget);
+      expect(find.text('RFD de frenagem'), findsOneWidget);
     });
   });
 }

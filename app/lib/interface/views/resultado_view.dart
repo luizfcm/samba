@@ -9,8 +9,6 @@ import '../../funcionalidades/medicao/dominio/sessao_medicao.dart';
 import '../../nucleo/persistencia/banco_local.dart';
 import '../core/app_colors.dart';
 
-import '../core/widgets/samba_botao.dart';
-
 class ResultadoView extends StatefulWidget {
   const ResultadoView({super.key});
 
@@ -21,7 +19,7 @@ class ResultadoView extends StatefulWidget {
 class _ResultadoViewState extends State<ResultadoView> {
   SessaoMedicao? _sessao;
   List<FlSpot> _pontosCurva = const [];
-  String _valorPico = '—';
+  ResumoSessao _resumo = const ResumoNaoProcessado('Sem dados.');
   bool _salvando = false;
 
   @override
@@ -35,12 +33,12 @@ class _ResultadoViewState extends State<ResultadoView> {
       for (final ponto in reduzirCurva(sessao.amostras))
         FlSpot(ponto.tempoS, ponto.forcaN),
     ];
-    _valorPico = valorDestaque(resumirSessao(sessao));
+    _resumo = resumirSessao(sessao);
   }
 
   Future<void> _salvar() async {
     if (_salvando) return;
-    _salvando = true;
+    setState(() => _salvando = true);
     final sessao = _sessao!;
     final amostras = sessao.amostras;
     try {
@@ -51,8 +49,8 @@ class _ResultadoViewState extends State<ResultadoView> {
         amostras: amostras,
       );
     } catch (_) {
-      _salvando = false;
       if (!mounted) return;
+      setState(() => _salvando = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Não foi possível salvar o treino.')),
       );
@@ -66,27 +64,30 @@ class _ResultadoViewState extends State<ResultadoView> {
   Widget build(BuildContext context) {
     final pontosCurva = _pontosCurva;
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      child: Scaffold(
-        backgroundColor: AppColors.azulEscuro,
-        body: SafeArea(
-          bottom: false,
-          child: Column(
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 20, 16, 20),
-                child: Text(
-                  'Análise Pós-Treino',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.branco,
+    return PopScope(
+      canPop: !_salvando,
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: Scaffold(
+          backgroundColor: AppColors.azulEscuro,
+          body: SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 20, 16, 20),
+                  child: Text(
+                    'Análise Pós-Treino',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.branco,
+                    ),
                   ),
                 ),
-              ),
-              Expanded(child: _folhaBranca(context, pontosCurva)),
-            ],
+                Expanded(child: _folhaBranca(context, pontosCurva)),
+              ],
+            ),
           ),
         ),
       ),
@@ -120,7 +121,7 @@ class _ResultadoViewState extends State<ResultadoView> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Força Estática vs Tempo (kgf/s)',
+                  'Força × tempo (N)',
                   style: TextStyle(
                     color: AppColors.branco,
                     fontWeight: FontWeight.bold,
@@ -168,33 +169,162 @@ class _ResultadoViewState extends State<ResultadoView> {
             ),
           ),
           const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: _buildMetricaCard(
-                  'Força de Pico',
-                  _valorPico,
-                  '+2.3% vs média',
-                ),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: _cartoesMetricas(),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildMetricaCard(
-                  'RFD Máximo',
-                  '5200 kgf/s',
-                  'Impulso rápido',
-                ),
-              ),
-            ],
+            ),
           ),
-          const Spacer(),
-          SambaBotao(
-            rotulo: 'Salvar Treino',
-            onPressed: _salvar,
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 56,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.verdeLimao,
+                foregroundColor: AppColors.azulEscuro,
+                elevation: 0,
+                shape: const StadiumBorder(),
+              ),
+              onPressed: _salvando ? null : _salvar,
+              child: _salvando
+                  ? const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            color: AppColors.azulEscuro,
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Text(
+                          'SALVANDO...',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                          ),
+                        ),
+                      ],
+                    )
+                  : const Text(
+                      'SALVAR TREINO',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
+                    ),
+            ),
           ),
         ],
       ),
     );
+  }
+
+  List<Widget> _cartoesMetricas() {
+    final resumo = _resumo;
+    final List<Widget> cartoes = switch (resumo) {
+      ResumoIsometria r => [
+        _buildMetricaCard(
+          'Força de Pico',
+          valorDestaque(r),
+          'repetição de maior pico',
+        ),
+        _buildMetricaCard(
+          'Média dos picos',
+          _valor(r.mediaPicosN, 0, 'N'),
+          '${r.repeticoes} repetições',
+        ),
+        _buildMetricaCard(
+          'RFD máxima',
+          _valor(r.rfdMaximaNPorS, 0, 'N/s'),
+          'repetição de maior pico',
+        ),
+        _buildMetricaCard(
+          'RFD máxima relativa',
+          _valor(r.rfdMaximaPercentualPorS, 0, '%Fmáx/s'),
+          'repetição de maior pico',
+        ),
+        _buildMetricaCard(
+          'Força sustentada',
+          _valor(r.forcaSustentadaN, 0, 'N'),
+          'maior média em 1 s',
+        ),
+        _buildMetricaCard(
+          'Variabilidade',
+          _valor(r.coeficienteVariacaoPercentual, 1, '%'),
+          'nesse trecho de 1 s',
+        ),
+      ],
+      ResumoSalto r => [
+        _buildMetricaCard(
+          'Altura do salto',
+          valorDestaque(r),
+          '${r.saltos} saltos · melhor',
+        ),
+        _buildMetricaCard(
+          'Índice de fadiga',
+          _valor(r.indiceFadigaPercentual, 1, '%'),
+          'queda na série',
+        ),
+        _buildMetricaCard(
+          'Potência média',
+          _valor(r.potenciaMediaConcentricaW, 0, 'W'),
+          'fase concêntrica · melhor salto',
+        ),
+        _buildMetricaCard(
+          'Impulso concêntrico',
+          _valor(r.impulsoConcentricoNs, 0, 'N·s'),
+          'melhor salto',
+        ),
+        _buildMetricaCard(
+          'Tempo de frenagem',
+          _valor(r.tempoFrenagemS, 2, 's'),
+          'melhor salto',
+        ),
+        _buildMetricaCard(
+          'RFD de frenagem',
+          _valor(r.rfdFrenagemNPorS, 0, 'N/s'),
+          'melhor salto',
+        ),
+      ],
+      ResumoNaoProcessado(:final motivo) => [
+        Text(
+          motivo,
+          style: const TextStyle(color: AppColors.cinza, fontSize: 14),
+        ),
+      ],
+    };
+
+    if (resumo is ResumoNaoProcessado) return cartoes;
+    return [
+      for (var i = 0; i < cartoes.length; i += 2) ...[
+        if (i > 0) const SizedBox(height: 12),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: cartoes[i]),
+              const SizedBox(width: 12),
+              Expanded(
+                child: i + 1 < cartoes.length
+                    ? cartoes[i + 1]
+                    : const SizedBox.shrink(),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ];
+  }
+
+  String _valor(double? valor, int casas, String unidade) {
+    if (valor == null) return '—';
+    final texto = valor.toStringAsFixed(casas).replaceAll('.', ',');
+    return '$texto $unidade';
   }
 
   Widget _buildMetricaCard(String titulo, String valor, String subtitulo) {
