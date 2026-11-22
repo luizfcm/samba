@@ -343,7 +343,6 @@ void main() {
       expect(fonte.assinada, isFalse);
       expect(fonte.chamadasParar, 1);
       expect(notificacoes, 2);
-      await expectLater(controlador.finalizar(), throwsStateError);
 
       await controlador.iniciar(Exercicio.remada, inicio: termino);
       expect(controlador.interrompida, isFalse);
@@ -359,6 +358,43 @@ void main() {
       expect(controlador.interrompida, isTrue);
       expect(controlador.sessao!.quantidadeAmostras, 1);
     });
+
+    test('devolve a sessão interrompida ao finalizar', () async {
+      await controlador.iniciar(Exercicio.remada, inicio: inicio);
+      fonte.emitir(0, 0, 10);
+      fonte.emitirErro(StateError('O equipamento desconectou.'));
+      final interrompida = controlador.sessao!;
+      final terminoInterrupcao = interrompida.termino;
+
+      final sessao = await controlador.finalizar(termino: termino);
+
+      expect(sessao, same(interrompida));
+      expect(sessao.termino, terminoInterrupcao);
+      expect(sessao.quantidadeAmostras, 1);
+      expect(controlador.estado, EstadoMedicao.finalizada);
+      expect(controlador.motivoInterrupcao, 'O equipamento desconectou.');
+      expect(fonte.chamadasParar, 1);
+      expect(notificacoes, 2);
+    });
+
+    test(
+      'devolve a mesma sessão ao finalizar duas vezes após a interrupção',
+      () async {
+        await controlador.iniciar(Exercicio.salto, inicio: inicio);
+        fonte.emitir(0, 0, -700);
+        await fonte.encerrar();
+        final interrompida = controlador.sessao!;
+
+        final primeira = await controlador.finalizar(termino: termino);
+        final segunda = await controlador.finalizar(termino: termino);
+
+        expect(primeira, same(interrompida));
+        expect(segunda, same(interrompida));
+        expect(interrompida.termino, isNot(termino));
+        expect(fonte.chamadasParar, 1);
+        expect(notificacoes, 2);
+      },
+    );
 
     test('interrompe a medição quando a sequência recomeça', () async {
       await controlador.iniciar(Exercicio.remada, inicio: inicio);

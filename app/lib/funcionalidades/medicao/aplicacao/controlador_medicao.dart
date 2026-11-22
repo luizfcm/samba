@@ -83,8 +83,10 @@ class ControladorMedicao extends ChangeNotifier {
   }
 
   /// Continua recebendo amostras até a fonte concluir a parada e só então
-  /// finaliza a sessão e passa a finalizada, mesmo que a parada falhe.
+  /// finaliza a sessão e passa a finalizada, mesmo que a parada falhe. Depois
+  /// de uma interrupção, devolve a sessão já finalizada sem chamar a fonte.
   Future<SessaoMedicao> finalizar({DateTime? termino}) async {
+    if (_estado == EstadoMedicao.finalizada && interrompida) return _sessao!;
     final assinatura = _assinatura;
     if (_estado != EstadoMedicao.medindo || assinatura == null) {
       throw StateError('Não há medição em andamento.');
