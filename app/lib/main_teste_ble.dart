@@ -3,38 +3,44 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'funcionalidades/medicao/aplicacao/controlador_medicao.dart';
+import 'funcionalidades/medicao/aplicacao/gerenciador_equipamento.dart';
 import 'funcionalidades/medicao/dominio/exercicio.dart';
-import 'nucleo/aquisicao/fonte_forca_ble.dart';
 import 'nucleo/ble/conexao_equipamento.dart';
 import 'nucleo/ble/conexao_equipamento_bluetooth.dart';
 import 'nucleo/ble/estado_equipamento.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  final gerenciador = GerenciadorEquipamento(
+    conector: const ConectorBluetooth(),
+  );
 
   runApp(
-    const MaterialApp(debugShowCheckedModeBanner: false, home: TelaTesteBle()),
+    MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: TelaTesteBle(gerenciador: gerenciador),
+    ),
   );
 }
 
 class TelaTesteBle extends StatefulWidget {
-  const TelaTesteBle({super.key});
+  const TelaTesteBle({super.key, required this.gerenciador});
+
+  final GerenciadorEquipamento gerenciador;
 
   @override
   State<TelaTesteBle> createState() => _TelaTesteBleState();
 }
 
 class _TelaTesteBleState extends State<TelaTesteBle> {
-  List<EquipamentoEncontrado> _encontrados = const [];
   EquipamentoEncontrado? _selecionado;
-  ConexaoEquipamentoBluetooth? _conexao;
-  FonteForcaBle? _fonte;
   ControladorMedicao? _controlador;
-  EstadoEquipamento? _estadoLido;
   int? _primeiroTimestampUs;
   bool _ocupado = false;
   String _mensagem = 'Procure o equipamento.';
   late final Timer _atualizacao;
+
+  GerenciadorEquipamento get _gerenciador => widget.gerenciador;
 
   @override
   void initState() {
@@ -49,8 +55,7 @@ class _TelaTesteBleState extends State<TelaTesteBle> {
   void dispose() {
     _atualizacao.cancel();
     _controlador?.dispose();
-    _fonte?.encerrar().ignore();
-    _conexao?.desconectar().ignore();
+    _gerenciador.dispose();
     super.dispose();
   }
 
@@ -71,52 +76,39 @@ class _TelaTesteBleState extends State<TelaTesteBle> {
   }
 
   Future<void> _procurar() => _executar('Procurando', () async {
-    final encontrados = await ConexaoEquipamentoBluetooth.procurar();
-    setState(() {
-      _encontrados = encontrados;
-      _selecionado = encontrados.firstOrNull;
-    });
+    final encontrados = await _gerenciador.procurar();
+    setState(() => _selecionado = encontrados.firstOrNull);
   });
 
-  Future<void> _conectar() => _executar('Conectando', () async {
-    final conexao = await ConexaoEquipamentoBluetooth.conectar(_selecionado!);
-    final fonte = FonteForcaBle(conexao: conexao);
-    _estadoLido = EstadoEquipamento.decodificar(await conexao.lerEstado());
-    setState(() {
-      _conexao = conexao;
-      _fonte = fonte;
-      _controlador = ControladorMedicao(fonte: fonte);
-    });
-  });
+  Future<void> _conectar() =>
+      _executar('Conectando', () => _gerenciador.conectar(_selecionado!));
 
-  Future<void> _tarar() => _executar('Tarando', () => _controlador!.tarar());
+  Future<void> _tarar() => _executar('Tarando', _gerenciador.tarar);
 
   Future<void> _iniciar() => _executar('Iniciando', () async {
+    _controlador?.dispose();
+    final controlador = ControladorMedicao(
+      fonte: _gerenciador.criarFonte(Exercicio.remada),
+    );
+    _controlador = controlador;
     _primeiroTimestampUs = null;
-    await _controlador!.iniciar(Exercicio.remada);
+    await controlador.iniciar(Exercicio.remada);
   });
 
   Future<void> _parar() => _executar('Parando', () async {
     await _controlador!.finalizar();
   });
 
-  Future<void> _desconectar() => _executar('Desconectando', () async {
-    _controlador?.dispose();
-    await _fonte?.encerrar();
-    await _conexao?.desconectar();
-    setState(() {
-      _controlador = null;
-      _fonte = null;
-      _conexao = null;
-      _estadoLido = null;
-    });
-  });
+  Future<void> _desconectar() =>
+      _executar('Desconectando', _gerenciador.desconectar);
 
   @override
   Widget build(BuildContext contexto) {
     final controlador = _controlador;
-    final conectado = _conexao != null;
+    final estadoConexao = _gerenciador.estado;
+    final conectado = estadoConexao == EstadoConexao.conectado;
     final medindo = controlador?.estado == EstadoMedicao.medindo;
+    final desconectado = estadoConexao == EstadoConexao.desconectado;
 
     return Scaffold(
       appBar: AppBar(title: const Text('SAMBA - Teste Bluetooth')),
@@ -128,11 +120,11 @@ class _TelaTesteBleState extends State<TelaTesteBle> {
             runSpacing: 8,
             children: [
               FilledButton(
-                onPressed: _ocupado || conectado ? null : _procurar,
+                onPressed: _ocupado || !desconectado ? null : _procurar,
                 child: const Text('Procurar'),
               ),
               FilledButton(
-                onPressed: _ocupado || conectado || _selecionado == null
+                onPressed: _ocupado || !desconectado || _selecionado == null
                     ? null
                     : _conectar,
                 child: const Text('Conectar'),
@@ -156,9 +148,10 @@ class _TelaTesteBleState extends State<TelaTesteBle> {
             ],
           ),
           const SizedBox(height: 16),
+          Text('Conexão: ${estadoConexao.name}'),
           Text(_mensagem),
-          if (!conectado)
-            for (final equipamento in _encontrados)
+          if (desconectado)
+            for (final equipamento in _gerenciador.encontrados)
               ListTile(
                 selected: identical(equipamento, _selecionado),
                 title: Text(
@@ -171,15 +164,22 @@ class _TelaTesteBleState extends State<TelaTesteBle> {
               ),
           if (conectado) ...[
             const Divider(height: 32),
-            Text('MTU: ${_conexao!.mtu}'),
+            Text('MTU: ${_mtu() ?? '—'}'),
             const SizedBox(height: 8),
-            ..._linhasEstado(_fonte!.ultimoEstado ?? _estadoLido),
+            ..._linhasEstado(_gerenciador.ultimoEstado),
+          ],
+          if (controlador != null) ...[
             const Divider(height: 32),
-            ..._linhasMedicao(controlador!, _fonte!),
+            ..._linhasMedicao(controlador),
           ],
         ],
       ),
     );
+  }
+
+  int? _mtu() {
+    final conexao = _gerenciador.conexao;
+    return conexao is ConexaoEquipamentoBluetooth ? conexao.mtu : null;
   }
 
   List<Widget> _linhasEstado(EstadoEquipamento? estado) {
@@ -202,10 +202,7 @@ class _TelaTesteBleState extends State<TelaTesteBle> {
     ];
   }
 
-  List<Widget> _linhasMedicao(
-    ControladorMedicao controlador,
-    FonteForcaBle fonte,
-  ) {
+  List<Widget> _linhasMedicao(ControladorMedicao controlador) {
     final sessao = controlador.sessao;
     final quantidade = sessao?.quantidadeAmostras ?? 0;
     String frequencia = '—';
@@ -231,7 +228,7 @@ class _TelaTesteBleState extends State<TelaTesteBle> {
       Text('Amostras saturadas: ${controlador.amostrasSaturadas}'),
       Text('Amostras com erro no ADC: ${controlador.amostrasComErroAdc}'),
       Text('Frequência média: $frequencia'),
-      Text('Pacotes inválidos: ${fonte.pacotesInvalidos}'),
+      Text('Pacotes inválidos: ${_gerenciador.pacotesInvalidos}'),
       Text('Última força: $ultimaForca'),
     ];
   }
