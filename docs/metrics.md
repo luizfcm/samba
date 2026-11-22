@@ -113,5 +113,5 @@ As fases são separadas pela velocidade. A frenagem (excêntrica) vai do instant
 - `calcularMetricasForca`, `detectarRepeticoes` e `ProcessadorSalto` exigem timestamps estritamente crescentes.
 - `detectarRepeticoes` exige frações em (0, 1], `fracaoFim` menor que `fracaoInicio` e `percentilLinhaBase` em [0, 1).
 - `ProcessadorIsometria` exige `limiarInicioN` maior ou igual a zero e janelas positivas.
-- `ProcessadorSalto` exige uma série com pelo menos `duracaoRepousoInicialUs` e uma janela de repouso que atenda às condições da massa.
-- Entradas inválidas produzem `ArgumentError`; `ProcessadorIsometria` repassa esses erros sem alteração.
+- Entradas inválidas produzem `ArgumentError`; `ProcessadorIsometria` repassa os erros de timestamps sem alteração.
+- Dados insuficientes não são erro. Com menos de duas amostras, `ProcessadorIsometria` devolve `metricas` e `instantePicoS` nulos e nenhuma repetição. Sem uma janela de repouso que atenda às condições da massa, inclusive numa série mais curta que `duracaoRepousoInicialUs`, `ProcessadorSalto` devolve `massaKg` nula e nenhum salto. `resumirSessao` transforma esses casos em `ResumoNaoProcessado`, com o motivo para o usuário.
