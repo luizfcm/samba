@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'funcionalidades/medicao/aplicacao/controlador_medicao.dart';
 import 'funcionalidades/medicao/dominio/exercicio.dart';
 import 'nucleo/aquisicao/fonte_forca_ble.dart';
+import 'nucleo/ble/conexao_equipamento.dart';
 import 'nucleo/ble/conexao_equipamento_bluetooth.dart';
 import 'nucleo/ble/estado_equipamento.dart';
 
@@ -48,7 +49,8 @@ class _TelaTesteBleState extends State<TelaTesteBle> {
   void dispose() {
     _atualizacao.cancel();
     _controlador?.dispose();
-    _fonte?.desconectar().ignore();
+    _fonte?.encerrar().ignore();
+    _conexao?.desconectar().ignore();
     super.dispose();
   }
 
@@ -100,7 +102,8 @@ class _TelaTesteBleState extends State<TelaTesteBle> {
 
   Future<void> _desconectar() => _executar('Desconectando', () async {
     _controlador?.dispose();
-    await _fonte?.desconectar();
+    await _fonte?.encerrar();
+    await _conexao?.desconectar();
     setState(() {
       _controlador = null;
       _fonte = null;

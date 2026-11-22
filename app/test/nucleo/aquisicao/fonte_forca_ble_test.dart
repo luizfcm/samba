@@ -36,6 +36,9 @@ class ConexaoEquipamentoFalsa implements ConexaoEquipamento {
     desconectada = true;
   }
 
+  @override
+  Future<void> get encerrada => Completer<void>().future;
+
   void notificarMedicao(Uint8List pacote) => _medicoes.add(pacote);
 
   void notificarEstado(int status) {
@@ -261,13 +264,16 @@ void main() {
       expect(fonte.ultimoEstado!.taxaNominalHz, 1200);
     });
 
-    test('desconecta e encerra o fluxo de amostras sem erro', () async {
-      final fim = fonte.amostras.toList();
-      await fonte.desconectar();
+    test(
+      'encerra o fluxo de amostras sem erro e sem fechar a conexão',
+      () async {
+        final fim = fonte.amostras.toList();
+        await fonte.encerrar();
 
-      expect(conexao.desconectada, isTrue);
-      expect(await fim, isEmpty);
-      expect(erros, isEmpty);
-    });
+        expect(conexao.desconectada, isFalse);
+        expect(await fim, isEmpty);
+        expect(erros, isEmpty);
+      },
+    );
   });
 }

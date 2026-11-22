@@ -55,6 +55,9 @@ class FonteForcaBle implements FonteForca {
   @override
   Stream<AmostraForca> get amostras => _amostras.stream;
 
+  /// Cada Estado válido notificado pelo equipamento.
+  Stream<EstadoEquipamento> get estados => _estados.stream;
+
   /// Desliga o modo bruto, se estiver ligado, e espera o bit de aquisição em
   /// andamento; sem confirmação, envia STOP e lança [TimeoutException]. Se o
   /// equipamento já estiver adquirindo, para a aquisição antes do START.
@@ -159,12 +162,12 @@ class FonteForcaBle implements FonteForca {
     );
   }
 
-  /// Encerra os fluxos sem tratar o fim da conexão como erro.
-  Future<void> desconectar() async {
+  /// Encerra os fluxos sem tratar o fim como erro e sem fechar a conexão, que
+  /// é de quem a abriu.
+  Future<void> encerrar() async {
     _adquirindo = false;
     await _assinaturaMedicoes.cancel();
     await _assinaturaEstados.cancel();
-    await _conexao.desconectar();
     await _amostras.close();
     await _estados.close();
   }

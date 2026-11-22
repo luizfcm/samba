@@ -6,19 +6,36 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import 'conexao_equipamento.dart';
 
-/// Equipamento achado na busca; esconde o tipo do pacote de Bluetooth.
-class EquipamentoEncontrado {
-  const EquipamentoEncontrado._(
+class _EquipamentoBluetooth implements EquipamentoEncontrado {
+  const _EquipamentoBluetooth(
     this._dispositivo, {
     required this.nome,
     required this.rssiDbm,
   });
 
   final BluetoothDevice _dispositivo;
+
+  @override
   final String nome;
+
+  @override
   final int rssiDbm;
 
+  @override
   String get identificador => _dispositivo.remoteId.str;
+}
+
+class ConectorBluetooth implements ConectorEquipamento {
+  const ConectorBluetooth();
+
+  @override
+  Future<List<EquipamentoEncontrado>> procurar({
+    Duration tempoLimite = const Duration(seconds: 5),
+  }) => ConexaoEquipamentoBluetooth.procurar(tempoLimite: tempoLimite);
+
+  @override
+  Future<ConexaoEquipamento> conectar(EquipamentoEncontrado equipamento) =>
+      ConexaoEquipamentoBluetooth.conectar(equipamento);
 }
 
 /// Único ponto do app que depende do flutter_blue_plus. A desconexão pelo
@@ -48,6 +65,7 @@ class ConexaoEquipamentoBluetooth implements ConexaoEquipamento {
   final _medicoes = StreamController<Uint8List>.broadcast();
   final _estados = StreamController<Uint8List>.broadcast();
   final _assinaturas = <StreamSubscription<Object?>>[];
+  final _fim = Completer<void>();
   bool _encerrada = false;
 
   static Future<List<EquipamentoEncontrado>> procurar({
@@ -57,7 +75,7 @@ class ConexaoEquipamentoBluetooth implements ConexaoEquipamento {
     final assinatura = FlutterBluePlus.onScanResults.listen((resultados) {
       for (final resultado in resultados) {
         final dispositivo = resultado.device;
-        encontrados[dispositivo.remoteId.str] = EquipamentoEncontrado._(
+        encontrados[dispositivo.remoteId.str] = _EquipamentoBluetooth(
           dispositivo,
           nome: resultado.advertisementData.advName,
           rssiDbm: resultado.rssi,
@@ -83,6 +101,9 @@ class ConexaoEquipamentoBluetooth implements ConexaoEquipamento {
     EquipamentoEncontrado equipamento, {
     Duration tempoLimite = const Duration(seconds: 15),
   }) async {
+    if (equipamento is! _EquipamentoBluetooth) {
+      throw ArgumentError('O equipamento não veio da busca por Bluetooth.');
+    }
     final dispositivo = equipamento._dispositivo;
     await FlutterBluePlus.stopScan();
     await dispositivo.connect(timeout: tempoLimite, mtu: null);
@@ -134,6 +155,9 @@ class ConexaoEquipamentoBluetooth implements ConexaoEquipamento {
   Stream<Uint8List> get estados => _estados.stream;
 
   @override
+  Future<void> get encerrada => _fim.future;
+
+  @override
   Future<Uint8List> lerEstado() async =>
       Uint8List.fromList(await _estado.read());
 
@@ -181,5 +205,6 @@ class ConexaoEquipamentoBluetooth implements ConexaoEquipamento {
     _assinaturas.clear();
     await _medicoes.close();
     await _estados.close();
+    if (!_fim.isCompleted) _fim.complete();
   }
 }
