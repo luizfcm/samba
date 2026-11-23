@@ -40,7 +40,6 @@ Future<void> main() async {
   WidgetsBinding.instance.addPostFrameCallback((_) {
     debugPrint('TESTE: primeiro quadro concluído');
   });
-  ;
 }
 
 class TelaTesteBanco extends StatefulWidget {
