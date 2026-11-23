@@ -67,3 +67,37 @@ class SambaMetrica extends StatelessWidget {
     );
   }
 }
+
+/// Widget que mostra uma grade de métricas, com 2 métricas por linha.
+class SambaGradeMetricas extends StatelessWidget {
+  const SambaGradeMetricas({super.key, required this.cartoes});
+
+  final List<Widget> cartoes;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < cartoes.length; i += 2) ...[
+          if (i > 0) const SizedBox(height: 12),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: cartoes[i]),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: i + 1 < cartoes.length
+                      ? cartoes[i + 1]
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+

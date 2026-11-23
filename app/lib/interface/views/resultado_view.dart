@@ -1,13 +1,24 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:fl_chart/fl_chart.dart';
+import 'dart:io';
+import 'dart:isolate';
 
+import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/material.dart';
+// Descomente após rodar: flutter pub add path_provider share_plus
+// import 'package:path_provider/path_provider.dart';
+// import 'package:share_plus/share_plus.dart';
+
+import '../../funcionalidades/medicao/aplicacao/csv_sessao.dart';
 import '../../funcionalidades/medicao/aplicacao/curva_reduzida.dart';
 import '../../funcionalidades/medicao/aplicacao/frequencia_media.dart';
 import '../../funcionalidades/medicao/aplicacao/resumo_sessao.dart';
+import '../../funcionalidades/medicao/dominio/exercicio.dart';
 import '../../funcionalidades/medicao/dominio/sessao_medicao.dart';
 import '../../nucleo/persistencia/banco_local.dart';
 import '../core/app_colors.dart';
+import '../core/widgets/cartoes_resumo.dart';
+import '../core/widgets/grafico_forca_ao_vivo.dart';
+import '../core/widgets/samba_botao.dart';
+import '../core/widgets/samba_pagina.dart';
 
 class ResultadoView extends StatefulWidget {
   const ResultadoView({super.key});
@@ -18,16 +29,31 @@ class ResultadoView extends StatefulWidget {
 
 class _ResultadoViewState extends State<ResultadoView> {
   SessaoMedicao? _sessao;
+  double? _forcaAlvoN;
   List<FlSpot> _pontosCurva = const [];
   ResumoSessao _resumo = const ResumoNaoProcessado('Sem dados.');
+  bool _inicializado = false;
   bool _salvando = false;
+  bool _exportando = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_sessao != null) return;
+    if (_inicializado) return;
+    _inicializado = true;
 
-    final sessao = ModalRoute.of(context)!.settings.arguments as SessaoMedicao;
+    final args = ModalRoute.of(context)?.settings.arguments;
+    SessaoMedicao? sessao;
+
+    if (args is Map<String, dynamic>) {
+      sessao = args['sessao'] as SessaoMedicao?;
+      _forcaAlvoN = args['forcaAlvoN'] as double?;
+    } else if (args is SessaoMedicao) {
+      sessao = args;
+    }
+
+    if (sessao == null) return;
+
     _sessao = sessao;
     _pontosCurva = [
       for (final ponto in reduzirCurva(sessao.amostras))
@@ -36,10 +62,56 @@ class _ResultadoViewState extends State<ResultadoView> {
     _resumo = resumirSessao(sessao);
   }
 
+  String _nomeExercicio(Exercicio exercicio) => switch (exercicio) {
+        Exercicio.remada => 'Remada (Isometria)',
+        Exercicio.extensora => 'Extensora (Isometria)',
+        Exercicio.salto => 'Salto Vertical',
+        Exercicio.terra => 'Levantamento Terra',
+      };
+
+  Future<void> _exportarCsv() async {
+    final sessao = _sessao;
+    if (sessao == null || _exportando) return;
+
+    setState(() => _exportando = true);
+    try {
+      // Gera o CSV fora da thread principal para não travar sessões longas
+      final csv = await Isolate.run(() => gerarCsvSessao(sessao));
+
+      // Grava em arquivo temporário
+      final pasta = Directory.systemTemp;
+      // Se usar path_provider, prefira: final pasta = await getTemporaryDirectory();
+      final timestamp = sessao.inicio.toIso8601String().replaceAll(':', '-');
+      final arquivo = File(
+        '${pasta.path}/samba_${sessao.exercicio.name}_$timestamp.csv',
+      );
+      await arquivo.writeAsString(csv);
+
+      // Para abrir a janela de compartilhamento do celular, adicione share_plus
+      // no pubspec.yaml e descomente a linha abaixo:
+      // await Share.shareXFiles([XFile(arquivo.path)], text: 'Dados brutos - SAMBA');
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Arquivo CSV gerado (${sessao.quantidadeAmostras} amostras).'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível exportar o CSV.')),
+      );
+    } finally {
+      if (mounted) setState(() => _exportando = false);
+    }
+  }
+
   Future<void> _salvar() async {
-    if (_salvando) return;
+    final sessao = _sessao;
+    if (sessao == null || _salvando) return;
+
     setState(() => _salvando = true);
-    final sessao = _sessao!;
     final amostras = sessao.amostras;
     try {
       await BancoLocal.salvarSessao(
@@ -56,316 +128,146 @@ class _ResultadoViewState extends State<ResultadoView> {
       );
       return;
     }
+
     if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Treino salvo com sucesso!')),
+    );
     Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+  }
+
+  Future<void> _confirmarDescarte() async {
+    if (_salvando || _exportando) return;
+
+    final descartar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Descartar treino?'),
+        content: const Text(
+          'Os dados desta medição serão perdidos permanentemente.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.erro),
+            child: const Text('Descartar'),
+          ),
+        ],
+      ),
+    );
+
+    if (descartar == true && mounted) {
+      Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final pontosCurva = _pontosCurva;
+    final sessao = _sessao;
 
     return PopScope(
-      canPop: !_salvando,
-      child: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: SystemUiOverlayStyle.light,
-        child: Scaffold(
-          backgroundColor: AppColors.azulEscuro,
-          body: SafeArea(
-            bottom: false,
-            child: Column(
-              children: [
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 20, 16, 20),
-                  child: Text(
-                    'Análise Pós-Treino',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w500,
-                      color: AppColors.branco,
-                    ),
-                  ),
-                ),
-                Expanded(child: _folhaBranca(context, pontosCurva)),
-              ],
-            ),
-          ),
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _confirmarDescarte();
+      },
+      child: SambaPagina(
+        cabecalho: const SambaTopo(
+          titulo: 'Análise Pós-Treino',
+          mostrarVoltar: false,
         ),
-      ),
-    );
-  }
-
-  Widget _folhaBranca(BuildContext context, List<FlSpot> pontosCurva) {
-    return Container(
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        color: AppColors.branco,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-      ),
-      padding: EdgeInsets.fromLTRB(
-        24,
-        28,
-        24,
-        24 + MediaQuery.of(context).padding.bottom,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            height: 230,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.azulEscuro,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Força × tempo (N)',
-                  style: TextStyle(
-                    color: AppColors.branco,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Expanded(
-                  child: LineChart(
-                    LineChartData(
-                      gridData: FlGridData(
-                        show: true,
-                        getDrawingHorizontalLine: (value) =>
-                            const FlLine(color: Colors.white12, strokeWidth: 1),
-                        getDrawingVerticalLine: (value) =>
-                            const FlLine(color: Colors.white12, strokeWidth: 1),
-                      ),
-                      titlesData: const FlTitlesData(
-                        rightTitles: AxisTitles(
-                          sideTitles: SideTitles(showTitles: false),
-                        ),
-                        topTitles: AxisTitles(
-                          sideTitles: SideTitles(showTitles: false),
-                        ),
-                      ),
-                      borderData: FlBorderData(show: false),
-                      lineBarsData: [
-                        LineChartBarData(
-                          spots: pontosCurva,
-                          isCurved: true,
-                          color: AppColors.verdeLimao,
-                          barWidth: 4,
-                          isStrokeCapRound: true,
-                          dotData: const FlDotData(show: false),
-                          belowBarData: BarAreaData(
-                            show: true,
-                            color: AppColors.verdeLimao.withValues(alpha: 0.2),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
+        rolavel: false,
+        child: sessao == null
+            ? _buildSemDados()
+            : Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: _cartoesMetricas(),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 56,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.verdeLimao,
-                foregroundColor: AppColors.azulEscuro,
-                elevation: 0,
-                shape: const StadiumBorder(),
-              ),
-              onPressed: _salvando ? null : _salvar,
-              child: _salvando
-                  ? const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 3,
-                            color: AppColors.azulEscuro,
-                          ),
-                        ),
-                        SizedBox(width: 12),
-                        Text(
-                          'SALVANDO...',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
-                        ),
-                      ],
-                    )
-                  : const Text(
-                      'SALVAR TREINO',
+                children: [
+                  _buildInfoSessao(sessao),
+                  const SizedBox(height: 12),
+                  GraficoForcaResultado(
+                    pontos: _pontosCurva,
+                    alvoN: _forcaAlvoN,
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: CartoesResumo(resumo: _resumo),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SambaBotaoContorno(
+                    rotulo: _exportando ? 'Exportando CSV...' : 'Exportar CSV',
+                    onPressed: (_salvando || _exportando) ? null : _exportarCsv,
+                  ),
+                  const SizedBox(height: 10),
+                  SambaBotao(
+                    rotulo: 'Salvar Treino',
+                    rotuloCarregando: 'Salvando...',
+                    carregando: _salvando,
+                    onPressed: _exportando ? null : _salvar,
+                  ),
+                  const SizedBox(height: 4),
+                  TextButton(
+                    onPressed: (_salvando || _exportando)
+                        ? null
+                        : _confirmarDescarte,
+                    child: const Text(
+                      'Descartar treino',
                       style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
+                        color: AppColors.cinza,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-            ),
-          ),
-        ],
+                  ),
+                ],
+              ),
       ),
     );
   }
 
-  List<Widget> _cartoesMetricas() {
-    final resumo = _resumo;
-    final List<Widget> cartoes = switch (resumo) {
-      ResumoIsometria r => [
-        _buildMetricaCard(
-          'Força de Pico',
-          valorDestaque(r),
-          'repetição de maior pico',
-        ),
-        _buildMetricaCard(
-          'Média dos picos',
-          _valor(r.mediaPicosN, 0, 'N'),
-          '${r.repeticoes} repetições',
-        ),
-        _buildMetricaCard(
-          'RFD máxima',
-          _valor(r.rfdMaximaNPorS, 0, 'N/s'),
-          'repetição de maior pico',
-        ),
-        _buildMetricaCard(
-          'RFD máxima relativa',
-          _valor(r.rfdMaximaPercentualPorS, 0, '%Fmáx/s'),
-          'repetição de maior pico',
-        ),
-        _buildMetricaCard(
-          'Força sustentada',
-          _valor(r.forcaSustentadaN, 0, 'N'),
-          'maior média em 1 s',
-        ),
-        _buildMetricaCard(
-          'Variabilidade',
-          _valor(r.coeficienteVariacaoPercentual, 1, '%'),
-          'nesse trecho de 1 s',
-        ),
-      ],
-      ResumoSalto r => [
-        _buildMetricaCard(
-          'Altura do salto',
-          valorDestaque(r),
-          '${r.saltos} saltos · melhor',
-        ),
-        _buildMetricaCard(
-          'Índice de fadiga',
-          _valor(r.indiceFadigaPercentual, 1, '%'),
-          'queda na série',
-        ),
-        _buildMetricaCard(
-          'Potência média',
-          _valor(r.potenciaMediaConcentricaW, 0, 'W'),
-          'fase concêntrica · melhor salto',
-        ),
-        _buildMetricaCard(
-          'Impulso concêntrico',
-          _valor(r.impulsoConcentricoNs, 0, 'N·s'),
-          'melhor salto',
-        ),
-        _buildMetricaCard(
-          'Tempo de frenagem',
-          _valor(r.tempoFrenagemS, 2, 's'),
-          'melhor salto',
-        ),
-        _buildMetricaCard(
-          'RFD de frenagem',
-          _valor(r.rfdFrenagemNPorS, 0, 'N/s'),
-          'melhor salto',
-        ),
-      ],
-      ResumoNaoProcessado(:final motivo) => [
+  Widget _buildInfoSessao(SessaoMedicao sessao) {
+    final duracao = (sessao.duracaoDadosS?.toStringAsFixed(1) ?? '0,0').replaceAll('.', ',');
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
         Text(
-          motivo,
-          style: const TextStyle(color: AppColors.cinza, fontSize: 14),
+          _nomeExercicio(sessao.exercicio),
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: AppColors.azulEscuro,
+          ),
         ),
-      ],
-    };
-
-    if (resumo is ResumoNaoProcessado) return cartoes;
-    return [
-      for (var i = 0; i < cartoes.length; i += 2) ...[
-        if (i > 0) const SizedBox(height: 12),
-        IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(child: cartoes[i]),
-              const SizedBox(width: 12),
-              Expanded(
-                child: i + 1 < cartoes.length
-                    ? cartoes[i + 1]
-                    : const SizedBox.shrink(),
-              ),
-            ],
+        Text(
+          '$duracao s · ${sessao.quantidadeAmostras} amostras',
+          style: const TextStyle(
+            fontSize: 13,
+            color: AppColors.cinza,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ],
-    ];
+    );
   }
 
-  String _valor(double? valor, int casas, String unidade) {
-    if (valor == null) return '—';
-    final texto = valor.toStringAsFixed(casas).replaceAll('.', ',');
-    return '$texto $unidade';
-  }
-
-  Widget _buildMetricaCard(String titulo, String valor, String subtitulo) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.cinzaClaro,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.azulEscuro, width: 1.5),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            titulo,
-            style: const TextStyle(
-              color: AppColors.cinza,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            valor,
-            style: const TextStyle(
-              color: AppColors.azulEscuro,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitulo,
-            style: const TextStyle(
-              color: AppColors.verdeAgua,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
+  Widget _buildSemDados() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Text(
+          'Nenhuma sessão encontrada para exibir.',
+          style: TextStyle(color: AppColors.cinza, fontSize: 16),
+        ),
+        const SizedBox(height: 20),
+        SambaBotao(
+          rotulo: 'Voltar ao Início',
+          onPressed: () =>
+              Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false),
+        ),
+      ],
     );
   }
 }

@@ -77,7 +77,7 @@ class _MedicaoViewState extends State<MedicaoView> {
     _timer?.cancel();
     final sessao = await _controlador!.finalizar();
     if (!mounted) return;
-    Navigator.pushReplacementNamed(context, '/resultado', arguments: sessao);
+    Navigator.pushReplacementNamed(context, '/resultado', arguments: {'sessao': sessao, 'forcaAlvoN': _alvoN});
   }
 
   Future<void> _definirAlvo() async {

@@ -19,7 +19,6 @@ class _CriarContaViewState extends State<CriarContaView> {
   final _senhaController = TextEditingController();
   final _confirmarController = TextEditingController();
   bool _ocultarSenha = true;
-  bool _criando = false;
   String? _erro;
 
   @override
@@ -48,21 +47,16 @@ class _CriarContaViewState extends State<CriarContaView> {
     return null;
   }
 
-  Future<void> _criarConta() async {
+  void _continuar() {
     final erro = _validar();
     setState(() => _erro = erro);
     if (erro != null) return;
 
-    setState(() => _criando = true);
-    // TODO(autenticação): chamar o cadastro do serviço de autenticação.
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    if (!mounted) return;
-
-    setState(() => _criando = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Conta criada. Entre com seu e-mail.')),
-    );
-    Navigator.pop(context);
+    Navigator.pushNamed(context, '/info', arguments: {
+      'email': _emailController.text.trim(),
+      'senha': _senhaController.text,
+      'nome': _nomeController.text.trim(),
+    });
   }
 
   @override
@@ -72,15 +66,44 @@ class _CriarContaViewState extends State<CriarContaView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Dados de acesso',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.azulEscuro,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.azulEscuro,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'Passo 1 de 2',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.verdeLimao,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
           const Text(
-            'Crie sua conta',
-            textAlign: TextAlign.center,
+            'Crie sua conta para salvar treinos e acompanhar sua evolução.',
             style: TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w500,
-              color: AppColors.azulEscuro,
+              fontSize: 14,
+              color: AppColors.cinza,
             ),
           ),
+          const SizedBox(height: 20),
           const SizedBox(height: 24),
           SambaCampo(
             controller: _nomeController,
@@ -118,16 +141,14 @@ class _CriarContaViewState extends State<CriarContaView> {
             icone: Icons.lock_outline,
             obscureText: _ocultarSenha,
             textInputAction: TextInputAction.done,
-            onSubmitted: (_) => _criarConta(),
+            onSubmitted: (_) => _continuar(),
           ),
           if (_erro != null) SambaErro(_erro!),
           const Spacer(),
           const SizedBox(height: 24),
           SambaBotao(
-            rotulo: 'Criar conta',
-            rotuloCarregando: 'Criando...',
-            carregando: _criando,
-            onPressed: _criarConta,
+            rotulo: 'Continuar',
+            onPressed: _continuar,
           ),
         ],
       ),
