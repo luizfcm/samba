@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app_colors.dart';
 
-/// Bateria em 4 divisões de 1/4. [nivel] vai de 0 a 4; nulo mostra a barra
-/// vazia, para quando o nível ainda não é conhecido.
+/// Widget que exibe uma barra de bateria com 4 divisões e um indicador de nível.
 class BarraBateria extends StatelessWidget {
   const BarraBateria({
     super.key,

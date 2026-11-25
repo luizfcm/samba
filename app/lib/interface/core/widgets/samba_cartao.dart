@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app_colors.dart';
 
-/// Cartão do Samba, com borda azul-escura, fundo cinza-claro e cantos arredondados. 
+/// Cartão do Samba, com borda azul-escura, fundo cinza-claro e cantos arredondados.
 class SambaCartao extends StatelessWidget {
   const SambaCartao({
     super.key,

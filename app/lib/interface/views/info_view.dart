@@ -58,13 +58,13 @@ class _InfoViewState extends State<InfoView> {
 
     // Dados recebidos da tela CriarContaView (caso queira salvar tudo junto com o Lucas)
     //final dadosConta =
-    //    ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    //  ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
     //final pesoKg = double.parse(_pesoController.text.trim().replaceAll(',', '.'));
     //final alturaCm = double.parse(_alturaController.text.trim().replaceAll(',', '.'));
 
     // TODO(persistência): salvar perfil do atleta (dadosConta, pesoKg, alturaCm) com o Lucas.
-    //await Future<void>.delayed(const Duration(milliseconds: 600));
-    //if (!mounted) return;
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
 
     setState(() => _salvando = false);
     ScaffoldMessenger.of(context).showSnackBar(

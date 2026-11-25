@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../app_colors.dart';
 
-/// Página com cabeçalho azul e folha branca arredondada, que ocupa o resto da
+/// Página com cabeçalho azul e folha branca arredondada, com scroll opcional.
 class SambaPagina extends StatelessWidget {
   const SambaPagina({
     super.key,
@@ -78,8 +78,6 @@ class SambaTopo extends StatelessWidget {
   });
 
   final String titulo;
-
-  /// Com falso, o botão de voltar some e o título continua centralizado.
   final bool mostrarVoltar;
 
   @override

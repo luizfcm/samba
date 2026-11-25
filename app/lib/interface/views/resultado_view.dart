@@ -3,6 +3,7 @@ import 'dart:isolate';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+
 // Descomente após rodar: flutter pub add path_provider share_plus
 // import 'package:path_provider/path_provider.dart';
 // import 'package:share_plus/share_plus.dart';
@@ -63,8 +64,8 @@ class _ResultadoViewState extends State<ResultadoView> {
   }
 
   String _nomeExercicio(Exercicio exercicio) => switch (exercicio) {
-        Exercicio.remada => 'Remada (Isometria)',
-        Exercicio.extensora => 'Extensora (Isometria)',
+        Exercicio.remada => 'Remada - Isometria',
+        Exercicio.extensora => 'Extensora - Isometria',
         Exercicio.salto => 'Salto Vertical',
         Exercicio.terra => 'Levantamento Terra',
       };

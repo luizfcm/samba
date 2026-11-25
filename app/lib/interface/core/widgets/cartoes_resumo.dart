@@ -5,8 +5,7 @@ import '../app_colors.dart';
 import '../formatacao.dart';
 import 'samba_metrica.dart';
 
-/// Cartões de métricas de um [ResumoSessao]: isometria e salto mostram
-/// conjuntos diferentes. Valores nulos aparecem como "—".
+// Widget que exibe os cartões de resumo de uma sessão de medição.
 class CartoesResumo extends StatelessWidget {
   const CartoesResumo({super.key, required this.resumo});
 
