@@ -10,7 +10,7 @@ Esta pasta reúne toda a documentação referente ao **hardware eletrônico** do
 documentacao-eletronica/
 ├── esquemáticos/        # Diagramas esquemáticos do circuito (PDF e arquivos-fonte)
 ├── datasheets/          # Datasheets dos principais componentes
-├── BOM.xlsx             # Lista de materiais (Bill of Materials)
+├── Lista de materiais/             # Link dos materiais utilizados no projeto
 └── README.md
 ---
  

@@ -61,10 +61,11 @@ class ResultadoIsometria {
     required List<ResultadoRepeticao> repeticoes,
   }) : repeticoes = List.unmodifiable(repeticoes);
 
-  final MetricasForca metricas;
+  /// Nulas, como [instantePicoS], quando a série tem menos de duas amostras.
+  final MetricasForca? metricas;
 
   /// Segundos desde a primeira amostra; em empate, vale o primeiro instante.
-  final double instantePicoS;
+  final double? instantePicoS;
   final List<ResultadoRepeticao> repeticoes;
 
   double? get mediaPicosN {
@@ -90,7 +91,8 @@ class ProcessadorIsometria implements ProcessadorExercicio<ResultadoIsometria> {
   final int janelaRfdMaximaUs;
   final int janelaForcaSustentadaUs;
 
-  /// O mapa de parâmetros não é usado.
+  /// Com menos de duas amostras devolve um resultado vazio. O mapa de
+  /// parâmetros não é usado.
   @override
   ResultadoIsometria processar({
     required List<AmostraForca> amostras,
@@ -101,6 +103,13 @@ class ProcessadorIsometria implements ProcessadorExercicio<ResultadoIsometria> {
         janelaForcaSustentadaUs <= 0 ||
         janelasRfdUs.any((janelaUs) => janelaUs <= 0)) {
       throw ArgumentError('Parâmetros da isometria inválidos.');
+    }
+    if (amostras.length < 2) {
+      return ResultadoIsometria(
+        metricas: null,
+        instantePicoS: null,
+        repeticoes: const [],
+      );
     }
 
     final metricas = calcularMetricasForca(amostras);

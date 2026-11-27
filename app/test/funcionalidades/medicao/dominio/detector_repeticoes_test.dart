@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:samba_app/funcionalidades/medicao/dominio/detector_repeticoes.dart';
+import 'package:samba_app/nucleo/aquisicao/series_simuladas.dart';
 import 'package:samba_app/nucleo/modelos/amostra_forca.dart';
 
 AmostraForca amostra(int timestampUs, double forcaN) => AmostraForca(
@@ -32,6 +33,27 @@ List<double> trapezio(double picoN) => [
   ...plato(picoN, 30),
   ...descida(picoN),
 ];
+
+List<AmostraForca> serieMilissegundos(List<double> forcasN) => [
+  for (var indice = 0; indice < forcasN.length; indice++)
+    amostra(indice * 1000, forcasN[indice]),
+];
+
+List<double> serieDescansoCurto() {
+  const preCargaN = 60.0;
+  const amplitudeN = 340.0;
+  return [
+    ...List.filled(2000, preCargaN),
+    for (var repeticao = 0; repeticao < 10; repeticao++) ...[
+      for (var indice = 0; indice < 500; indice++)
+        preCargaN + amplitudeN * indice / 500,
+      ...List.filled(3000, preCargaN + amplitudeN),
+      for (var indice = 0; indice < 500; indice++)
+        preCargaN + amplitudeN * (500 - indice) / 500,
+      ...List.filled(1500, preCargaN),
+    ],
+  ];
+}
 
 List<(int, int)> intervalos(List<Repeticao> repeticoes) => [
   for (final repeticao in repeticoes)
@@ -103,6 +125,26 @@ void main() {
       expect(intervalos(detectarRepeticoes(amostras)), [(11, 59), (71, 110)]);
     });
 
+    test('mede as repetições a partir da linha de base da pré-carga', () {
+      final amostras = serieMilissegundos([
+        for (final forcaN in gerarSerieIsometria(picoN: 340, ruidoN: 0))
+          60 + forcaN,
+      ]);
+
+      // Linha de base de 60 N e pico de 400 N: limiares de 128 N e 94 N. Sem
+      // a linha de base, o limiar de fim seria 40 N, abaixo da pré-carga.
+      expect(detectarRepeticoes(amostras), hasLength(10));
+    });
+
+    test('encontra a linha de base com descanso curto', () {
+      final amostras = serieMilissegundos(serieDescansoCurto());
+
+      // 40 s de contração em 57 s de série: 70%. O 10º percentil fica na
+      // pré-carga de 60 N; a mediana cairia no platô de 400 N, igual ao pico.
+      expect(detectarRepeticoes(amostras), hasLength(10));
+      expect(detectarRepeticoes(amostras, percentilLinhaBase: 0.5), isEmpty);
+    });
+
     test('devolve lista vazia sem força positiva', () {
       expect(detectarRepeticoes([]), isEmpty);
       expect(detectarRepeticoes(serie(repouso(50))), isEmpty);
@@ -129,6 +171,18 @@ void main() {
           ),
           throwsArgumentError,
           reason: 'início $inicio, fim $fim',
+        );
+      }
+    });
+
+    test('rejeita percentil da linha de base fora de [0, 1)', () {
+      final amostras = serie(trapezio(100));
+
+      for (final percentil in [-0.1, 1.0, double.nan]) {
+        expect(
+          () => detectarRepeticoes(amostras, percentilLinhaBase: percentil),
+          throwsArgumentError,
+          reason: 'percentil $percentil',
         );
       }
     });

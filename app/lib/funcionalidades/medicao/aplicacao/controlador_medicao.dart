@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../../nucleo/aquisicao/fonte_forca.dart';
+import '../../../nucleo/ble/bits_status.dart';
 import '../../../nucleo/modelos/amostra_forca.dart';
 import '../dominio/exercicio.dart';
 import '../dominio/sessao_medicao.dart';
@@ -12,6 +13,8 @@ enum EstadoMedicao { ociosa, medindo, finalizada }
 class ControladorMedicao extends ChangeNotifier {
   ControladorMedicao({required this._fonte});
 
+  static const _quedaReinicioSequencia = 1000;
+
   final FonteForca _fonte;
   EstadoMedicao _estado = EstadoMedicao.ociosa;
   SessaoMedicao? _sessao;
@@ -20,6 +23,9 @@ class ControladorMedicao extends ChangeNotifier {
   int? _ultimoTimestampUs;
   int _amostrasPerdidas = 0;
   int _amostrasDescartadas = 0;
+  int _amostrasSaturadas = 0;
+  int _amostrasComErroAdc = 0;
+  String? _motivoInterrupcao;
   bool _inverterSinal = false;
   bool _encerrado = false;
 
@@ -30,6 +36,15 @@ class ControladorMedicao extends ChangeNotifier {
   /// e não contam como perdidas.
   int get amostrasPerdidas => _amostrasPerdidas;
   int get amostrasDescartadas => _amostrasDescartadas;
+
+  /// Contadas entre as amostras aceitas na sessão.
+  int get amostrasSaturadas => _amostrasSaturadas;
+  int get amostrasComErroAdc => _amostrasComErroAdc;
+
+  /// Erro ou fim do fluxo da fonte, ou reinício da sequência, finaliza a
+  /// sessão com as amostras já recebidas.
+  bool get interrompida => _motivoInterrupcao != null;
+  String? get motivoInterrupcao => _motivoInterrupcao;
 
   /// No salto a célula é comprimida e a fonte manda força negativa; a sessão
   /// recebe a força com o sinal invertido, sempre positiva no exercício.
@@ -43,7 +58,14 @@ class ControladorMedicao extends ChangeNotifier {
     _ultimoTimestampUs = null;
     _amostrasPerdidas = 0;
     _amostrasDescartadas = 0;
-    final assinatura = _fonte.amostras.listen(_receberAmostra);
+    _amostrasSaturadas = 0;
+    _amostrasComErroAdc = 0;
+    _motivoInterrupcao = null;
+    final assinatura = _fonte.amostras.listen(
+      _receberAmostra,
+      onError: (Object erro) => _interromper(_descrever(erro)),
+      onDone: () => _interromper('A fonte de força encerrou o envio.'),
+    );
     _assinatura = assinatura;
     _alterarEstado(EstadoMedicao.medindo);
 
@@ -61,8 +83,10 @@ class ControladorMedicao extends ChangeNotifier {
   }
 
   /// Continua recebendo amostras até a fonte concluir a parada e só então
-  /// finaliza a sessão e passa a finalizada, mesmo que a parada falhe.
+  /// finaliza a sessão e passa a finalizada, mesmo que a parada falhe. Depois
+  /// de uma interrupção, devolve a sessão já finalizada sem chamar a fonte.
   Future<SessaoMedicao> finalizar({DateTime? termino}) async {
+    if (_estado == EstadoMedicao.finalizada && interrompida) return _sessao!;
     final assinatura = _assinatura;
     if (_estado != EstadoMedicao.medindo || assinatura == null) {
       throw StateError('Não há medição em andamento.');
@@ -81,6 +105,13 @@ class ControladorMedicao extends ChangeNotifier {
     return sessao;
   }
 
+  Future<void> tarar() async {
+    if (_estado == EstadoMedicao.medindo) {
+      throw StateError('Não é possível tarar durante uma medição.');
+    }
+    await _fonte.tarar();
+  }
+
   @override
   void dispose() {
     _encerrado = true;
@@ -96,6 +127,10 @@ class ControladorMedicao extends ChangeNotifier {
   void _receberAmostra(AmostraForca amostra) {
     final ultimaSequencia = _ultimaSequencia;
     if (ultimaSequencia != null) {
+      if (amostra.sequencia < ultimaSequencia - _quedaReinicioSequencia) {
+        _interromper('A sequência do equipamento recomeçou.');
+        return;
+      }
       if (amostra.sequencia <= ultimaSequencia) {
         _amostrasDescartadas++;
         return;
@@ -110,6 +145,8 @@ class ControladorMedicao extends ChangeNotifier {
       return;
     }
     _ultimoTimestampUs = amostra.timestampUs;
+    if (amostra.status & BitsStatus.saturacao != 0) _amostrasSaturadas++;
+    if (amostra.status & BitsStatus.erroAdc != 0) _amostrasComErroAdc++;
     _sessao!.adicionarAmostra(
       _inverterSinal
           ? AmostraForca(
@@ -122,6 +159,25 @@ class ControladorMedicao extends ChangeNotifier {
           : amostra,
     );
   }
+
+  /// Durante a finalização não interrompe: a sessão já está terminando.
+  void _interromper(String motivo) {
+    final assinatura = _assinatura;
+    if (_estado != EstadoMedicao.medindo || assinatura == null) return;
+    _assinatura = null;
+    _motivoInterrupcao = motivo;
+    unawaited(assinatura.cancel());
+    _fonte.parar().ignore();
+    _sessao!.finalizar();
+    _alterarEstado(EstadoMedicao.finalizada);
+  }
+
+  String _descrever(Object erro) => switch (erro) {
+    StateError(:final message) => message,
+    FormatException(:final message) => message,
+    TimeoutException(message: final mensagem?) => mensagem,
+    _ => '$erro',
+  };
 
   void _alterarEstado(EstadoMedicao estado) {
     _estado = estado;

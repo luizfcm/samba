@@ -144,16 +144,53 @@ void main() {
       );
     });
 
-    test('rejeita série sem repouso inicial estável', () {
-      expect(
-        () => processar(gerarSerieSalto().sublist(2000)),
-        throwsArgumentError,
-      );
-      expect(
-        () => processar(gerarSerieSalto().sublist(0, 500)),
-        throwsArgumentError,
-      );
-      expect(() => processar([]), throwsArgumentError);
+    test('estima a massa no primeiro repouso depois da plataforma vazia', () {
+      final resultado = processar([
+        ...List.filled(3000, 0.0),
+        ...gerarSerieSalto(),
+      ]);
+
+      expect(resultado.massaKg, closeTo(75, 75 * 0.005));
+      expect(resultado.saltos, hasLength(10));
+      // 3 s de plataforma vazia e 2 s de repouso antes da primeira descida.
+      expect(resultado.saltos.first.inicioS, closeTo(5.011, 0.002));
+    });
+
+    test('ignora o salto anterior ao primeiro repouso', () {
+      final resultado = processar(gerarSerieSalto().sublist(2000));
+
+      expect(resultado.massaKg, closeTo(75, 75 * 0.01));
+      expect(resultado.saltos, hasLength(9));
+    });
+
+    test('ignora a pessoa fora da plataforma como voo', () {
+      final resultado = processar([
+        ...gerarSerieSalto(saltos: 1, ruidoN: 0),
+        ...List.filled(4000, 0.0),
+        ...gerarSerieSalto(saltos: 1, ruidoN: 0),
+      ]);
+
+      // Os 4 s fora da plataforma dariam 9,81 × 4² / 8 = 19,6 m de altura.
+      expect(resultado.saltos, hasLength(2));
+      for (final salto in resultado.saltos) {
+        expect(salto.tempoVooS, closeTo(0.4, 0.002));
+      }
+      expect(resultado.melhorSalto!.alturaVooM, lessThan(0.2));
+    });
+
+    test('devolve resultado vazio sem repouso com a pessoa parada', () {
+      for (final forcasN in [
+        List.filled(3000, 0.0),
+        List.filled(3000, 150.0),
+        gerarSerieSalto().sublist(0, 500),
+        <double>[],
+      ]) {
+        final resultado = processar(forcasN);
+
+        expect(resultado.massaKg, isNull);
+        expect(resultado.saltos, isEmpty);
+        expect(resultado.melhorSalto, isNull);
+      }
     });
 
     test('não encontra saltos numa série sem voo', () {
@@ -196,7 +233,7 @@ void main() {
       // Sem frenagem, o impulso concêntrico vai de v = 0 até a decolagem.
       expect(
         salto.impulsoConcentricoNs,
-        closeTo(resultado.massaKg * salto.velocidadeDecolagemMs, 1e-9),
+        closeTo(resultado.massaKg! * salto.velocidadeDecolagemMs, 1e-9),
       );
       expect(salto.forcaMaximaConcentricaN, salto.forcaMaximaN);
       expect(salto.potenciaMediaConcentricaW, greaterThan(0));

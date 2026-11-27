@@ -6,11 +6,13 @@ FonteForca → ControladorMedicao → SessaoMedicao → processadores
 
 ## Fonte
 
-Uma `FonteForca` entrega `AmostraForca` (sequência, timestamp em µs, força em N e status) por um Stream e é iniciada e parada pelo controlador. O formato dos pacotes enviados pelo dispositivo está no [protocolo BLE v2](protocolo_ble_v2.md). Nenhuma camada assume taxa fixa: os intervalos vêm sempre dos timestamps.
+Uma `FonteForca` entrega `AmostraForca` (sequência, timestamp em µs, força em N e status) por um Stream e é iniciada, parada e tarada pelo controlador; a tara só é permitida fora de uma medição. O formato dos pacotes enviados pelo dispositivo está no [protocolo BLE v2](protocolo_ble_v2.md). Nenhuma camada assume taxa fixa: os intervalos vêm sempre dos timestamps.
+
+O `GerenciadorEquipamento` guarda a conexão com o equipamento e o modo, Bluetooth ou simulado, e cria a fonte de cada medição. A conexão continua aberta entre medições e só o gerenciador a fecha; no modo Bluetooth sem conexão, criar a fonte falha em vez de cair para a fonte simulada.
 
 ## Controlador
 
-`ControladorMedicao` cria a sessão, inicia e para a fonte e passa pelos estados `ociosa`, `medindo` e `finalizada`, notificando só nas mudanças de estado. Ao finalizar, continua recebendo amostras até a fonte concluir `parar()`, o que ela faz quando não há mais amostras a entregar. Amostras cuja sequência ou timestamp não avance são descartadas e contadas, e saltos de sequência são contados como perdas. A interface fala com o controlador e a sessão, nunca com a fonte.
+`ControladorMedicao` cria a sessão, inicia e para a fonte e passa pelos estados `ociosa`, `medindo` e `finalizada`, notificando só nas mudanças de estado. Ao finalizar, continua recebendo amostras até a fonte concluir `parar()`, o que ela faz quando não há mais amostras a entregar. Amostras cuja sequência ou timestamp não avance são descartadas e contadas, e saltos de sequência são contados como perdas. Erro ou fim do fluxo da fonte, ou uma sequência mais de 1000 abaixo da última, que indica reinício do equipamento, interrompe a medição: a sessão é finalizada com as amostras já recebidas, e o controlador expõe o motivo. Depois disso, `finalizar()` devolve essa sessão sem chamar a fonte de novo; sem medição em andamento ou interrompida, falha com `StateError`. As amostras aceitas com os bits de saturação e de erro no ADC também são contadas. A interface fala com o controlador e a sessão, nunca com a fonte.
 
 A fonte entrega a força com o sinal do equipamento: tração positiva, compressão negativa. O controlador inverte o sinal no salto, em que a célula é comprimida, e o mantém em remada e extensora. Da sessão em diante, processadores, gráficos e banco veem a força do exercício sempre positiva.
 

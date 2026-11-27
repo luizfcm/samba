@@ -63,17 +63,17 @@ Todos os instantes são relativos à primeira amostra da série. Em empate no pi
 
 ## Detecção de repetições
 
-`detectarRepeticoes(amostras, {fracaoInicio = 0.2, fracaoFim = 0.1, duracaoMinimaUs = 300000})` devolve uma lista não modificável de `Repeticao`, com `indiceInicio` e `indiceFim` (exclusivo) na lista de amostras.
+`detectarRepeticoes(amostras, {fracaoInicio = 0.2, fracaoFim = 0.1, duracaoMinimaUs = 300000, percentilLinhaBase = 0.1})` devolve uma lista não modificável de `Repeticao`, com `indiceInicio` e `indiceFim` (exclusivo) na lista de amostras.
 
-O pico é a maior força da série. Uma repetição começa na primeira amostra com força maior ou igual a `fracaoInicio × pico` e termina na primeira amostra seguinte com força menor que `fracaoFim × pico`, que fica fora do trecho. Se a série acabar durante uma contração, a repetição vai até a última amostra. Como os limiares dependem do pico de toda a série, um pico isolado alto eleva os limiares das demais repetições.
+O pico é a maior força da série, e a linha de base é o percentil `percentilLinhaBase` (padrão 0,1) da força da série inteira, que representa o repouso mesmo com descansos curtos, enquanto ele ocupar mais que essa fração da série. Os limiares são `linha de base + fração × (pico − linha de base)`: uma repetição começa na primeira amostra com força maior ou igual ao limiar de `fracaoInicio` e termina na primeira amostra seguinte com força menor que o limiar de `fracaoFim`, que fica fora do trecho. Assim, uma pré-carga no repouso não faz as repetições se juntarem. Se a série acabar durante uma contração, a repetição vai até a última amostra. Como os limiares dependem do pico de toda a série, um pico isolado alto eleva os limiares das demais repetições.
 
-São descartados os trechos com menos de duas amostras ou com duração menor que `duracaoMinimaUs`, medida do timestamp da primeira à última amostra do trecho. Lista vazia ou pico menor ou igual a zero devolve lista vazia.
+São descartados os trechos com menos de duas amostras ou com duração menor que `duracaoMinimaUs`, medida do timestamp da primeira à última amostra do trecho. Lista vazia, pico menor ou igual a zero ou pico igual à linha de base devolve lista vazia.
 
 ## Salto
 
-`ProcessadorSalto({duracaoRepousoInicialUs = 1000000, fracaoVoo = 0.1, duracaoMinimaVooUs = 100000, fracaoRepouso = 0.05, duracaoMinimaRepousoUs = 100000})` retorna `ResultadoSalto`, com g = 9,81 m/s². O mapa de parâmetros não é usado.
+`ProcessadorSalto({duracaoRepousoInicialUs = 1000000, forcaMinimaRepousoN = 200, fracaoVoo = 0.1, duracaoMinimaVooUs = 100000, duracaoMaximaVooUs = 1000000, fracaoRepouso = 0.05, duracaoMinimaRepousoUs = 100000})` retorna `ResultadoSalto`, com g = 9,81 m/s². O mapa de parâmetros não é usado.
 
-A massa é a média da força nas amostras do primeiro `duracaoRepousoInicialUs`, dividida por g; o peso é `massa × g`. Um voo é um trecho com força menor que `fracaoVoo × peso` que dura pelo menos `duracaoMinimaVooUs`: a decolagem é a primeira amostra do trecho e a aterrissagem, a primeira amostra depois dele. O início do salto é a última amostra do último trecho antes da decolagem em que a força fica dentro de `peso ± fracaoRepouso × peso` por pelo menos `duracaoMinimaRepousoUs`. A busca não passa da aterrissagem do salto anterior; sem esse repouso, o salto é ignorado.
+A massa é a média da força, dividida por g, na primeira janela de `duracaoRepousoInicialUs` em que a média passa de `forcaMinimaRepousoN` e o desvio padrão fica abaixo de 2% da média; o mínimo evita confundir a plataforma vazia com a pessoa parada. O peso é `massa × g`, e a busca de saltos começa no fim dessa janela. Um voo é um trecho com força menor que `fracaoVoo × peso` que dura de `duracaoMinimaVooUs` a `duracaoMaximaVooUs`; trechos mais longos são a pessoa fora da plataforma e são ignorados. A decolagem é a primeira amostra do trecho e a aterrissagem, a primeira amostra depois dele. O início do salto é a última amostra do último trecho antes da decolagem em que a força fica dentro de `peso ± fracaoRepouso × peso` por pelo menos `duracaoMinimaRepousoUs`. A busca não passa da aterrissagem do salto anterior; sem esse repouso, o salto é ignorado.
 
 Do início até a última amostra antes da decolagem, cada `PontoSalto` traz:
 
@@ -111,7 +111,7 @@ As fases são separadas pela velocidade. A frenagem (excêntrica) vai do instant
 
 - `calcularMetricasForca` exige pelo menos duas amostras.
 - `calcularMetricasForca`, `detectarRepeticoes` e `ProcessadorSalto` exigem timestamps estritamente crescentes.
-- `detectarRepeticoes` exige frações em (0, 1] e `fracaoFim` menor que `fracaoInicio`.
+- `detectarRepeticoes` exige frações em (0, 1], `fracaoFim` menor que `fracaoInicio` e `percentilLinhaBase` em [0, 1).
 - `ProcessadorIsometria` exige `limiarInicioN` maior ou igual a zero e janelas positivas.
-- `ProcessadorSalto` exige uma série com pelo menos `duracaoRepousoInicialUs`, cujo trecho inicial tenha média positiva e desvio padrão de no máximo 2% da média.
-- Entradas inválidas produzem `ArgumentError`; `ProcessadorIsometria` repassa esses erros sem alteração.
+- Entradas inválidas produzem `ArgumentError`; `ProcessadorIsometria` repassa os erros de timestamps sem alteração.
+- Dados insuficientes não são erro. Com menos de duas amostras, `ProcessadorIsometria` devolve `metricas` e `instantePicoS` nulos e nenhuma repetição. Sem uma janela de repouso que atenda às condições da massa, inclusive numa série mais curta que `duracaoRepousoInicialUs`, `ProcessadorSalto` devolve `massaKg` nula e nenhum salto. `resumirSessao` transforma esses casos em `ResumoNaoProcessado`, com o motivo para o usuário.

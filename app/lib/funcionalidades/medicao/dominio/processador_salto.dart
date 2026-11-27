@@ -77,7 +77,8 @@ class ResultadoSalto {
     required List<ResultadoSaltoIndividual> saltos,
   }) : saltos = List.unmodifiable(saltos);
 
-  final double massaKg;
+  /// Nula quando não há repouso com a pessoa parada; então não há saltos.
+  final double? massaKg;
   final List<ResultadoSaltoIndividual> saltos;
 
   double? get alturaMediaM {
@@ -114,31 +115,44 @@ class ResultadoSalto {
 class ProcessadorSalto implements ProcessadorExercicio<ResultadoSalto> {
   const ProcessadorSalto({
     this.duracaoRepousoInicialUs = 1000000,
+    this.forcaMinimaRepousoN = 200,
     this.fracaoVoo = 0.1,
     this.duracaoMinimaVooUs = 100000,
+    this.duracaoMaximaVooUs = 1000000,
     this.fracaoRepouso = 0.05,
     this.duracaoMinimaRepousoUs = 100000,
   });
 
   final int duracaoRepousoInicialUs;
+
+  /// Média mínima do repouso, para não confundir a plataforma vazia com a
+  /// pessoa parada.
+  final double forcaMinimaRepousoN;
   final double fracaoVoo;
   final int duracaoMinimaVooUs;
+
+  /// Trechos mais longos sem força são a pessoa fora da plataforma, não voo.
+  final int duracaoMaximaVooUs;
   final double fracaoRepouso;
   final int duracaoMinimaRepousoUs;
 
-  /// A série precisa começar com a pessoa parada; saltos sem repouso antes da
-  /// decolagem são ignorados. O mapa de parâmetros não é usado.
+  /// A massa vem do primeiro repouso estável; sem ele, o resultado vem vazio.
+  /// Saltos antes do repouso ou sem repouso antes da decolagem são ignorados.
+  /// O mapa de parâmetros não é usado.
   @override
   ResultadoSalto processar({
     required List<AmostraForca> amostras,
     required Map<String, double> parametros,
   }) {
     validarTimestamps(amostras);
-    final massaKg = _calcularMassaKg(amostras);
+    final repouso = _estimarRepouso(amostras);
+    if (repouso == null) return ResultadoSalto(massaKg: null, saltos: const []);
+    final massaKg = repouso.massaKg;
     final pesoN = massaKg * _gravidadeMs2;
     final saltos = <ResultadoSaltoIndividual>[];
-    var limite = 0;
+    var limite = repouso.fim;
     for (final (decolagem, aterrissagem) in _encontrarVoos(amostras, pesoN)) {
+      if (decolagem < limite) continue;
       final inicio = _encontrarInicio(amostras, pesoN, limite, decolagem);
       limite = aterrissagem;
       if (inicio != null) {
@@ -150,31 +164,49 @@ class ProcessadorSalto implements ProcessadorExercicio<ResultadoSalto> {
     return ResultadoSalto(massaKg: massaKg, saltos: saltos);
   }
 
-  double _calcularMassaKg(List<AmostraForca> amostras) {
+  /// Primeira janela de [duracaoRepousoInicialUs] com média acima de
+  /// [forcaMinimaRepousoN] e desvio abaixo de 2% da média; [fim] é exclusivo.
+  /// Nula se a série for mais curta que a janela ou não tiver esse repouso.
+  ({double massaKg, int fim})? _estimarRepouso(List<AmostraForca> amostras) {
     if (amostras.isEmpty ||
         amostras.last.timestampUs - amostras.first.timestampUs <
             duracaoRepousoInicialUs) {
-      throw ArgumentError('A série é mais curta que o repouso inicial.');
+      return null;
     }
 
-    final origemUs = amostras.first.timestampUs;
-    final forcasN = amostras
-        .takeWhile(
-          (amostra) => amostra.timestampUs - origemUs < duracaoRepousoInicialUs,
-        )
-        .map((amostra) => amostra.forcaN)
-        .toList();
-    final mediaN = forcasN.reduce((a, b) => a + b) / forcasN.length;
+    var somaN = 0.0;
     var somaQuadrados = 0.0;
-    for (final forcaN in forcasN) {
-      somaQuadrados += (forcaN - mediaN) * (forcaN - mediaN);
+    var fim = 0;
+    for (
+      var inicio = 0;
+      amostras.last.timestampUs - amostras[inicio].timestampUs >=
+          duracaoRepousoInicialUs;
+      inicio++
+    ) {
+      final limiteUs = amostras[inicio].timestampUs + duracaoRepousoInicialUs;
+      while (amostras[fim].timestampUs < limiteUs) {
+        final forcaN = amostras[fim].forcaN;
+        somaN += forcaN;
+        somaQuadrados += forcaN * forcaN;
+        fim++;
+      }
+      final quantidade = fim - inicio;
+      final mediaN = somaN / quantidade;
+      final desvioN = sqrt(
+        max(0.0, somaQuadrados / quantidade - mediaN * mediaN),
+      );
+      if (mediaN > forcaMinimaRepousoN && desvioN < 0.02 * mediaN) {
+        var somaExataN = 0.0;
+        for (var indice = inicio; indice < fim; indice++) {
+          somaExataN += amostras[indice].forcaN;
+        }
+        return (massaKg: somaExataN / quantidade / _gravidadeMs2, fim: fim);
+      }
+      final saindoN = amostras[inicio].forcaN;
+      somaN -= saindoN;
+      somaQuadrados -= saindoN * saindoN;
     }
-    final desvioN = sqrt(somaQuadrados / forcasN.length);
-
-    if (mediaN <= 0 || desvioN > 0.02 * mediaN) {
-      throw ArgumentError('A série precisa começar com a pessoa parada.');
-    }
-    return mediaN / _gravidadeMs2;
+    return null;
   }
 
   /// Pares (decolagem, aterrissagem); um voo sem aterrissagem é ignorado.
@@ -188,7 +220,10 @@ class ProcessadorSalto implements ProcessadorExercicio<ResultadoSalto> {
       } else if (decolagem != null) {
         final duracaoUs =
             amostras[indice].timestampUs - amostras[decolagem].timestampUs;
-        if (duracaoUs >= duracaoMinimaVooUs) voos.add((decolagem, indice));
+        if (duracaoUs >= duracaoMinimaVooUs &&
+            duracaoUs <= duracaoMaximaVooUs) {
+          voos.add((decolagem, indice));
+        }
         decolagem = null;
       }
     }
