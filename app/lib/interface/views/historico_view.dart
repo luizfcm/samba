@@ -33,7 +33,9 @@ class _HistoricoViewState extends State<HistoricoView> {
   }
 
   void _recarregar() {
-    setState(() => _itens = widget.carregar());
+    setState(() {
+      _itens = widget.carregar();
+    });
   }
 
   Future<void> _abrir(ItemHistorico item) async {

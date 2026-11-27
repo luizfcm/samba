@@ -2,8 +2,8 @@ import '../../funcionalidades/medicao/dominio/exercicio.dart';
 
 String rotuloExercicio(Exercicio exercicio) => switch (exercicio) {
   Exercicio.salto => 'Salto Vertical',
-  Exercicio.remada => 'Remada - Isometria',
-  Exercicio.extensora => 'Extensora - Isometria',
+  Exercicio.remada => 'Remada',
+  Exercicio.extensora => 'Extensora',
   Exercicio.terra => 'Levantamento Terra',
 };
 

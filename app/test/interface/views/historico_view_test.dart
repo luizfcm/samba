@@ -18,6 +18,18 @@ final _itens = [
     inicio: DateTime(2026, 10, 12, 10, 15),
     picoN: null,
   ),
+  ItemHistorico(
+    id: 'c',
+    exercicio: Exercicio.extensora,
+    inicio: DateTime(2026, 10, 9, 16, 40),
+    picoN: 3100,
+  ),
+  ItemHistorico(
+    id: 'd',
+    exercicio: Exercicio.terra,
+    inicio: DateTime(2026, 10, 8, 9, 0),
+    picoN: 2500,
+  ),
 ];
 
 Widget app({
@@ -47,8 +59,8 @@ void main() {
 
       expect(find.text('Salto Vertical'), findsOneWidget);
       expect(find.text('14 Out, 18:35'), findsOneWidget);
-      expect(find.text('Remada - Isometria'), findsOneWidget);
-      expect(find.text('Extensora - Isometria'), findsOneWidget);
+      expect(find.text('Remada'), findsOneWidget);
+      expect(find.text('Extensora'), findsOneWidget);
       expect(find.text('Levantamento Terra'), findsOneWidget);
     });
 
