@@ -12,9 +12,12 @@ import '../../funcionalidades/medicao/aplicacao/csv_sessao.dart';
 import '../../funcionalidades/medicao/aplicacao/curva_reduzida.dart';
 import '../../funcionalidades/medicao/aplicacao/frequencia_media.dart';
 import '../../funcionalidades/medicao/aplicacao/resumo_sessao.dart';
+
 import '../../funcionalidades/medicao/dominio/exercicio.dart';
 import '../../funcionalidades/medicao/dominio/sessao_medicao.dart';
+
 import '../../nucleo/persistencia/banco_local.dart';
+
 import '../core/app_colors.dart';
 import '../core/widgets/cartoes_resumo.dart';
 import '../core/widgets/grafico_forca_ao_vivo.dart';
@@ -31,6 +34,7 @@ class ResultadoView extends StatefulWidget {
 class _ResultadoViewState extends State<ResultadoView> {
   SessaoMedicao? _sessao;
   double? _forcaAlvoN;
+  bool _somenteLeitura = false;
   List<FlSpot> _pontosCurva = const [];
   ResumoSessao _resumo = const ResumoNaoProcessado('Sem dados.');
   bool _inicializado = false;
@@ -49,6 +53,7 @@ class _ResultadoViewState extends State<ResultadoView> {
     if (args is Map<String, dynamic>) {
       sessao = args['sessao'] as SessaoMedicao?;
       _forcaAlvoN = args['forcaAlvoN'] as double?;
+      _somenteLeitura = args['somenteLeitura'] == true;
     } else if (args is SessaoMedicao) {
       sessao = args;
     }
@@ -64,8 +69,8 @@ class _ResultadoViewState extends State<ResultadoView> {
   }
 
   String _nomeExercicio(Exercicio exercicio) => switch (exercicio) {
-        Exercicio.remada => 'Remada - Isometria',
-        Exercicio.extensora => 'Extensora - Isometria',
+        Exercicio.remada => 'Remada',
+        Exercicio.extensora => 'Extensora',
         Exercicio.salto => 'Salto Vertical',
         Exercicio.terra => 'Levantamento Terra',
       };
@@ -76,10 +81,8 @@ class _ResultadoViewState extends State<ResultadoView> {
 
     setState(() => _exportando = true);
     try {
-      // Gera o CSV fora da thread principal para não travar sessões longas
       final csv = await Isolate.run(() => gerarCsvSessao(sessao));
 
-      // Grava em arquivo temporário
       final pasta = Directory.systemTemp;
       // Se usar path_provider, prefira: final pasta = await getTemporaryDirectory();
       final timestamp = sessao.inicio.toIso8601String().replaceAll(':', '-');
@@ -88,8 +91,7 @@ class _ResultadoViewState extends State<ResultadoView> {
       );
       await arquivo.writeAsString(csv);
 
-      // Para abrir a janela de compartilhamento do celular, adicione share_plus
-      // no pubspec.yaml e descomente a linha abaixo:
+      // Para compartilhar o arquivo nativamente, adicione share_plus no pubspec.yaml:
       // await Share.shareXFiles([XFile(arquivo.path)], text: 'Dados brutos - SAMBA');
 
       if (!mounted) return;
@@ -143,19 +145,44 @@ class _ResultadoViewState extends State<ResultadoView> {
     final descartar = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Descartar treino?'),
+        backgroundColor: AppColors.branco,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: AppColors.azulEscuro, width: 1.5),
+        ),
+        title: const Text(
+          'Descartar treino?',
+          style: TextStyle(
+            color: AppColors.azulEscuro,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         content: const Text(
           'Os dados desta medição serão perdidos permanentemente.',
+          style: TextStyle(color: AppColors.azulEscuro, fontSize: 15),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
+            child: const Text(
+              'Cancelar',
+              style: TextStyle(
+                color: AppColors.azulEscuro,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: AppColors.erro),
-            child: const Text('Descartar'),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.erro,
+              foregroundColor: AppColors.branco,
+              shape: const StadiumBorder(),
+            ),
+            child: const Text(
+              'Descartar',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -171,14 +198,14 @@ class _ResultadoViewState extends State<ResultadoView> {
     final sessao = _sessao;
 
     return PopScope(
-      canPop: false,
+      canPop: _somenteLeitura,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _confirmarDescarte();
+        if (!didPop && !_somenteLeitura) _confirmarDescarte();
       },
       child: SambaPagina(
-        cabecalho: const SambaTopo(
-          titulo: 'Análise Pós-Treino',
-          mostrarVoltar: false,
+        cabecalho: SambaTopo(
+          titulo: _somenteLeitura ? 'Detalhes do Treino' : 'Análise Pós-Treino',
+          mostrarVoltar: _somenteLeitura,
         ),
         rolavel: false,
         child: sessao == null
@@ -203,26 +230,28 @@ class _ResultadoViewState extends State<ResultadoView> {
                     rotulo: _exportando ? 'Exportando CSV...' : 'Exportar CSV',
                     onPressed: (_salvando || _exportando) ? null : _exportarCsv,
                   ),
-                  const SizedBox(height: 10),
-                  SambaBotao(
-                    rotulo: 'Salvar Treino',
-                    rotuloCarregando: 'Salvando...',
-                    carregando: _salvando,
-                    onPressed: _exportando ? null : _salvar,
-                  ),
-                  const SizedBox(height: 4),
-                  TextButton(
-                    onPressed: (_salvando || _exportando)
-                        ? null
-                        : _confirmarDescarte,
-                    child: const Text(
-                      'Descartar treino',
-                      style: TextStyle(
-                        color: AppColors.cinza,
-                        fontWeight: FontWeight.w600,
+                  if (!_somenteLeitura) ...[
+                    const SizedBox(height: 10),
+                    SambaBotao(
+                      rotulo: 'Salvar Treino',
+                      rotuloCarregando: 'Salvando...',
+                      carregando: _salvando,
+                      onPressed: _exportando ? null : _salvar,
+                    ),
+                    const SizedBox(height: 4),
+                    TextButton(
+                      onPressed: (_salvando || _exportando)
+                          ? null
+                          : _confirmarDescarte,
+                      child: const Text(
+                        'Descartar treino',
+                        style: TextStyle(
+                          color: AppColors.cinza,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
       ),
@@ -230,7 +259,8 @@ class _ResultadoViewState extends State<ResultadoView> {
   }
 
   Widget _buildInfoSessao(SessaoMedicao sessao) {
-    final duracao = (sessao.duracaoDadosS?.toStringAsFixed(1) ?? '0,0').replaceAll('.', ',');
+    final duracao = (sessao.duracaoDadosS?.toStringAsFixed(1) ?? '0,0')
+        .replaceAll('.', ',');
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -264,9 +294,14 @@ class _ResultadoViewState extends State<ResultadoView> {
         ),
         const SizedBox(height: 20),
         SambaBotao(
-          rotulo: 'Voltar ao Início',
-          onPressed: () =>
-              Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false),
+          rotulo: 'Voltar',
+          onPressed: () {
+            if (_somenteLeitura && Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+            }
+          },
         ),
       ],
     );

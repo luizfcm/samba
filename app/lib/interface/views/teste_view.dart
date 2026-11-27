@@ -20,14 +20,15 @@ class TesteView extends StatefulWidget {
 }
 
 class _TesteViewState extends State<TesteView> {
-  String tipoExercicio = 'Remada - Isometria';
+  String tipoExercicio = 'Remada';
   bool _tentouIniciar = false; 
   
   ConexaoEquipamento get _conexao => widget.conexao ?? ConexaoEquipamento.instancia;
 
   Exercicio get _exercicio => switch (tipoExercicio) {
     'Salto Vertical' => Exercicio.salto,
-    'Extensora - Isometria' => Exercicio.extensora,
+    'Extensora' => Exercicio.extensora,
+    'Levantamento Terra' => Exercicio.terra,
     _ => Exercicio.remada,
   };
 
@@ -61,9 +62,9 @@ class _TesteViewState extends State<TesteView> {
             ),
           ),
           const SizedBox(height: 14),
-          _opcaoModalidade('Remada - Isometria'),
+          _opcaoModalidade('Remada'),
           const SizedBox(height: 10),
-          _opcaoModalidade('Extensora - Isometria'),
+          _opcaoModalidade('Extensora'),
           const SizedBox(height: 10),
           _opcaoModalidade('Salto Vertical'),
           const SizedBox(height: 10),

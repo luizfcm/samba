@@ -4,13 +4,8 @@ import 'package:flutter/foundation.dart';
 
 enum EstadoConexao { desconectado, procurando, conectado }
 
-/// Converte o percentual em 4 divisões de 1/4 (de 0 a 4).
 int nivelBateria(int percentual) => (percentual / 25).ceil().clamp(0, 4);
 
-/// Estado da conexão com o equipamento, compartilhado pelas telas.
-///
-/// Esta versão é simulada. Quando o Bluetooth real estiver pronto, só o
-/// interior de [conectar] e [desconectar] muda; as telas continuam iguais.
 class ConexaoEquipamento extends ChangeNotifier {
   ConexaoEquipamento({
     this.duracaoBusca = const Duration(seconds: 2),

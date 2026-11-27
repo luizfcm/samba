@@ -77,11 +77,53 @@ class _MedicaoViewState extends State<MedicaoView> {
     _timer?.cancel();
     final sessao = await _controlador!.finalizar();
     if (!mounted) return;
-    Navigator.pushReplacementNamed(context, '/resultado', arguments: {'sessao': sessao, 'forcaAlvoN': _alvoN});
+    Navigator.pushReplacementNamed(
+      context,
+      '/resultado',
+      arguments: {'sessao': sessao, 'forcaAlvoN': _alvoN},
+    );
   }
 
   Future<void> _definirAlvo() async {
-    final resposta = await mostrarDialogoAlvo(context, alvoAtual: _alvoN);
+    final resposta = await showDialog<RespostaAlvo>(
+      context: context,
+      builder: (dialogContext) => Theme(
+        data: Theme.of(dialogContext).copyWith(
+          colorScheme: const ColorScheme.light(
+            primary: AppColors.azulEscuro,
+            onPrimary: AppColors.branco,
+            surface: AppColors.branco,
+            onSurface: AppColors.azulEscuro,
+          ),
+          dialogTheme: DialogThemeData(
+            backgroundColor: AppColors.branco,
+            titleTextStyle: const TextStyle(
+              color: AppColors.azulEscuro,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+              side: const BorderSide(color: AppColors.azulEscuro, width: 1.5),
+            ),
+          ),
+        ),
+        child: Builder(
+          builder: (themedContext) {
+            // Dispara o diálogo original já herdando o tema claro de alto contraste
+            Future.microtask(() async {
+              if (!themedContext.mounted) return;
+              final res = await mostrarDialogoAlvo(
+                themedContext,
+                alvoAtual: _alvoN,
+              );
+              if (themedContext.mounted) Navigator.pop(themedContext, res);
+            });
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
     if (resposta == null || !mounted) return;
     setState(() => _alvoN = resposta.valorN);
   }
@@ -100,6 +142,7 @@ class _MedicaoViewState extends State<MedicaoView> {
     final percentual = (forcaAtual != null && alvo != null)
         ? '${(forcaAtual / alvo * 100).round()}%'
         : '—';
+    final temAlvo = alvo != null;
 
     return SambaPagina(
       cabecalho: const SambaTopo(
@@ -145,6 +188,7 @@ class _MedicaoViewState extends State<MedicaoView> {
                 child: SambaMetrica(
                   titulo: '% do alvo',
                   valor: percentual,
+                  destaque: atingiu,
                   compacto: true,
                 ),
               ),
@@ -154,16 +198,23 @@ class _MedicaoViewState extends State<MedicaoView> {
           SambaCartao(
             raio: 30,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            cor: temAlvo ? AppColors.azulEscuro : AppColors.cinzaClaro,
             onTap: _definirAlvo,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.flag, size: 20, color: AppColors.azulEscuro),
+                Icon(
+                  Icons.flag,
+                  size: 20,
+                  color: temAlvo
+                      ? (atingiu ? AppColors.verdeLimao : AppColors.verdeAgua)
+                      : AppColors.azulEscuro,
+                ),
                 const SizedBox(width: 8),
                 Text(
-                  alvo == null ? 'Definir força-alvo' : 'Alvo: ${alvo.round()} N',
-                  style: const TextStyle(
-                    color: AppColors.azulEscuro,
+                  temAlvo ? 'Alvo: ${alvo.round()} N' : 'Definir força-alvo',
+                  style: TextStyle(
+                    color: temAlvo ? AppColors.branco : AppColors.azulEscuro,
                     fontWeight: FontWeight.w600,
                     fontSize: 16,
                   ),
