@@ -1,167 +1,142 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
+import '../../funcionalidades/conexao/aplicacao/conexao_equipamento.dart';
 import '../core/app_colors.dart';
+import '../core/widgets/samba_botao.dart';
+import '../core/widgets/samba_pagina.dart';
+import '../core/widgets/status_conexao.dart';
 
 class HomeView extends StatelessWidget {
-  const HomeView({super.key});
+  const HomeView({super.key, this.conexao});
+
+  /// Nulo usa [ConexaoEquipamento.instancia]. Existe para testes.
+  final ConexaoEquipamento? conexao;
 
   @override
   Widget build(BuildContext context) {
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      child: Scaffold(
-        backgroundColor: AppColors.azulEscuro,
-        body: SafeArea(
-          bottom: false,
-          child: Column(
-            children: [
-              const _CabecalhoSaudacao(),
-              Expanded(child: _folhaBranca(context)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+    final c = conexao ?? ConexaoEquipamento.instancia;
 
-  Widget _folhaBranca(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        color: AppColors.branco,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+    return SambaPagina(
+      cabecalho: _CabecalhoHome(
+        conexao: c,
+        onPerfil: () => Navigator.pushNamed(context, '/perfil'),
       ),
-      child: ListView(
-        padding: EdgeInsets.fromLTRB(
-          24,
-          28,
-          24,
-          24 + MediaQuery.of(context).padding.bottom,
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _BotaoAcao(
+          BotaoAcao(
             icone: Icons.play_arrow_rounded,
             rotulo: 'Novo teste',
             destaque: true,
             onPressed: () => Navigator.pushNamed(context, '/teste'),
           ),
+          _DicaConexao(conexao: c),
           const SizedBox(height: 14),
-          _BotaoAcao(
+          BotaoAcao(
             icone: Icons.folder_open,
             rotulo: 'Histórico',
             onPressed: () => Navigator.pushNamed(context, '/historico'),
           ),
-          const SizedBox(height: 14),
-          _BotaoAcao(
-            icone: Icons.person_outline,
-            rotulo: 'Perfil',
-            onPressed: () => Navigator.pushNamed(context, '/perfil'),
-          ),
         ],
       ),
     );
   }
 }
 
-class _CabecalhoSaudacao extends StatelessWidget {
-  const _CabecalhoSaudacao();
+class _CabecalhoHome extends StatelessWidget {
+  const _CabecalhoHome({required this.conexao, required this.onPerfil});
+
+  final ConexaoEquipamento conexao;
+  final VoidCallback onPerfil;
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.fromLTRB(24, 20, 24, 24),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Row(
             children: [
-              Text(
-                'Olá, atleta',
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.branco,
-                ),
+              const Image(
+                image: AssetImage('assets/logobranca.png'),
+                width: 110,
+                semanticLabel: 'Logotipo SAMBA',
               ),
-              SizedBox(height: 4),
-              Text(
-                'O que vamos medir hoje?',
-                style: TextStyle(fontSize: 14, color: AppColors.cinzaClaro),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Perfil',
+                onPressed: onPerfil,
+                icon: const Icon(Icons.person_outline),
+                style: IconButton.styleFrom(
+                  foregroundColor: AppColors.branco,
+                  minimumSize: const Size(46, 46),
+                  side: const BorderSide(color: Color(0x80FFFFFF), width: 1.5),
+                  shape: const CircleBorder(),
+                ),
               ),
             ],
           ),
-          Image(
-            image: AssetImage('assets/logobranca.png'),
-            width: 110,
-            semanticLabel: 'Logotipo SAMBA',
+          const SizedBox(height: 20),
+          const Text(
+            'Olá, atleta',
+            style: TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.bold,
+              color: AppColors.branco,
+            ),
           ),
+          const SizedBox(height: 4),
+          const Text(
+            'O que vamos medir hoje?',
+            style: TextStyle(fontSize: 14, color: AppColors.cinzaClaro),
+          ),
+          const SizedBox(height: 16),
+          PilulaConexao(conexao: conexao),
         ],
       ),
     );
   }
 }
 
-class _BotaoAcao extends StatelessWidget {
-  const _BotaoAcao({
-    required this.icone,
-    required this.rotulo,
-    required this.onPressed,
-    this.destaque = false,
-  });
+class _DicaConexao extends StatelessWidget {
+  const _DicaConexao({required this.conexao});
 
-  final IconData icone;
-  final String rotulo;
-  final VoidCallback onPressed;
-  final bool destaque;
+  final ConexaoEquipamento conexao;
 
   @override
   Widget build(BuildContext context) {
-    final corTexto = destaque ? AppColors.branco : AppColors.azulEscuro;
-
-    return Material(
-      color: destaque ? AppColors.azulEscuro : AppColors.cinzaClaro,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(30),
-        side: const BorderSide(color: AppColors.azulEscuro, width: 1.5),
-      ),
-      child: InkWell(
-        onTap: onPressed,
-        child: SizedBox(
-          height: destaque ? 84 : 72,
+    return ListenableBuilder(
+      listenable: conexao,
+      builder: (context, _) {
+        final conectado = conexao.conectado;
+        final cor = conectado ? AppColors.verdeAgua : AppColors.cinza;
+        return Padding(
+          padding: const EdgeInsets.only(left: 16, top: 8),
           child: Row(
             children: [
-              const SizedBox(width: 16),
-              CircleAvatar(
-                radius: destaque ? 26 : 22,
-                backgroundColor: destaque
-                    ? AppColors.verdeLimao
-                    : AppColors.azulEscuro,
-                child: Icon(
-                  icone,
-                  size: destaque ? 30 : 26,
-                  color: destaque ? AppColors.azulEscuro : AppColors.verdeLimao,
-                ),
+              Icon(
+                conectado ? Icons.check_circle : Icons.info_outline,
+                size: 16,
+                color: cor,
               ),
-              const SizedBox(width: 16),
-              Expanded(
+              const SizedBox(width: 6),
+              Flexible(
                 child: Text(
-                  rotulo,
+                  conectado
+                      ? 'Equipamento conectado'
+                      : 'Conecte o equipamento antes de iniciar',
                   style: TextStyle(
-                    fontSize: destaque ? 22 : 20,
-                    fontWeight: destaque ? FontWeight.w700 : FontWeight.w500,
-                    color: corTexto,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: cor,
                   ),
                 ),
               ),
-              Icon(Icons.chevron_right, color: corTexto),
-              const SizedBox(width: 12),
             ],
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

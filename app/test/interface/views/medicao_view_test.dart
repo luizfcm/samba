@@ -1,3 +1,4 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:samba_app/funcionalidades/medicao/dominio/exercicio.dart';
@@ -40,14 +41,17 @@ void main() {
       expect(find.text('00:01'), findsOneWidget);
       expect(find.textContaining('amostras recebidas'), findsOneWidget);
       expect(find.text('0 amostras recebidas'), findsNothing);
+      expect(find.byType(LineChart), findsOneWidget);
+      expect(find.text('Definir força-alvo'), findsOneWidget);
 
-      await tester.tap(find.text('FINALIZAR MEDIÇÃO'));
+      await tester.tap(find.text('Finalizar Medição'));
       // O cancelamento da assinatura conclui fora do tempo simulado do teste.
       await tester.runAsync(() => Future<void>.delayed(Duration.zero));
       await tester.pumpAndSettle();
 
       expect(find.text('fim'), findsOneWidget);
-      final sessao = argumentoResultado as SessaoMedicao;
+      final argumentos = argumentoResultado as Map;
+      final sessao = argumentos['sessao'] as SessaoMedicao;
       expect(sessao.finalizada, isTrue);
       expect(sessao.exercicio, Exercicio.remada);
       expect(sessao.quantidadeAmostras, greaterThan(0));

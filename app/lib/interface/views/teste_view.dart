@@ -1,164 +1,60 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
+import '../../funcionalidades/conexao/aplicacao/conexao_equipamento.dart';
 import '../../funcionalidades/medicao/dominio/exercicio.dart';
 import '../core/app_colors.dart';
+import '../core/widgets/samba_botao.dart';
+import '../core/widgets/samba_cartao.dart';
+import '../core/widgets/samba_pagina.dart';
+import '../core/widgets/status_conexao.dart';
+import '../core/widgets/samba_campo.dart';
+import '../core/widgets/barra_bateria.dart';
 
 class TesteView extends StatefulWidget {
-  const TesteView({super.key});
+  const TesteView({super.key, this.conexao});
+
+  final ConexaoEquipamento? conexao;
 
   @override
   State<TesteView> createState() => _TesteViewState();
 }
 
 class _TesteViewState extends State<TesteView> {
-  String tipoExercicio = 'Isometria';
-  bool bluetoothConectado = false; // Estado do botão Bluetooth
+  String tipoExercicio = 'Remada';
+  bool _tentouIniciar = false; 
+  
+  ConexaoEquipamento get _conexao => widget.conexao ?? ConexaoEquipamento.instancia;
+
+  Exercicio get _exercicio => switch (tipoExercicio) {
+    'Salto Vertical' => Exercicio.salto,
+    'Extensora' => Exercicio.extensora,
+    'Levantamento Terra' => Exercicio.terra,
+    _ => Exercicio.remada,
+  };
+
+  void _iniciar() {
+    if (!_conexao.conectado) {
+      setState(() => _tentouIniciar = true);
+      mostrarPainelConexao(context, conexao: _conexao);
+      return;
+    }
+    Navigator.pushNamed(context, '/medicao', arguments: _exercicio);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      child: Scaffold(
-        backgroundColor: AppColors.azulEscuro,
-        body: SafeArea(
-          bottom: false,
-          child: Column(
-            children: [
-              _buildTopo(context),
-              Expanded(child: _folhaBranca(context)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTopo(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back, color: AppColors.branco),
-            onPressed: () => Navigator.pop(context),
-          ),
-          const Expanded(
-            child: Text(
-              'Novo Teste',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w500,
-                color: AppColors.branco,
-              ),
-            ),
-          ),
-          const SizedBox(width: 48),
-        ],
-      ),
-    );
-  }
-
-  Widget _folhaBranca(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        color: AppColors.branco,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-      ),
-      padding: EdgeInsets.fromLTRB(
-        24,
-        28,
-        24,
-        24 + MediaQuery.of(context).padding.bottom,
-      ),
+    return SambaPagina(
+      rolavel: false,
+      cabecalho: const SambaTopo(titulo: 'Novo Teste'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Botão Interativo de Conexão Bluetooth
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-            child: Material(
-              color: bluetoothConectado
-                  ? AppColors.azulEscuro
-                  : AppColors.cinzaClaro,
-              borderRadius: BorderRadius.circular(20),
-              child: InkWell(
-                onTap: () {
-                  setState(() {
-                    bluetoothConectado = !bluetoothConectado;
-                  });
-                },
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppColors.azulEscuro, width: 1.5),
-                  ),
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        backgroundColor: bluetoothConectado
-                            ? AppColors.verdeLimao
-                            : AppColors.cinza,
-                        child: Icon(
-                          bluetoothConectado
-                              ? Icons.bluetooth_connected
-                              : Icons.bluetooth_disabled,
-                          color: bluetoothConectado
-                              ? AppColors.azulEscuro
-                              : AppColors.branco,
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Status do Dispositivo',
-                              style: TextStyle(
-                                color: bluetoothConectado
-                                    ? AppColors.cinzaClaro
-                                    : AppColors.cinza,
-                                fontSize: 12,
-                              ),
-                            ),
-                            Text(
-                              bluetoothConectado
-                                  ? 'Bluetooth Conectado'
-                                  : 'Toque para conectar',
-                              style: TextStyle(
-                                color: bluetoothConectado
-                                    ? AppColors.branco
-                                    : AppColors.azulEscuro,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        bluetoothConectado
-                            ? Icons.check_circle
-                            : Icons.power_settings_new,
-                        color: bluetoothConectado
-                            ? AppColors.verdeLimao
-                            : AppColors.cinza,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+          _CartaoConexao(
+            conexao: _conexao,
+            onTap: () => mostrarPainelConexao(context, conexao: _conexao),
           ),
           const SizedBox(height: 28),
-          const Text(
-            'Selecione a Modalidade',
+          const Text( 'Selecione a Modalidade',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -166,36 +62,34 @@ class _TesteViewState extends State<TesteView> {
             ),
           ),
           const SizedBox(height: 14),
-          _opcaoModalidade('Isometria'),
+          _opcaoModalidade('Remada'),
+          const SizedBox(height: 10),
+          _opcaoModalidade('Extensora'),
           const SizedBox(height: 10),
           _opcaoModalidade('Salto Vertical'),
+          const SizedBox(height: 10),
+          _opcaoModalidade('Levantamento Terra'),
           const Spacer(),
-          SizedBox(
-            height: 56,
-            child: ElevatedButton(
-              onPressed: () => Navigator.pushNamed(
-                context,
-                '/medicao',
-                arguments: tipoExercicio == 'Salto Vertical'
-                    ? Exercicio.salto
-                    : Exercicio.remada,
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.verdeLimao,
-                foregroundColor: AppColors.azulEscuro,
-                elevation: 0,
-                shape: const StadiumBorder(),
-              ),
-              child: const Text(
-                'INICIAR MEDIÇÃO',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ),
+
+          ListenableBuilder(
+            listenable: _conexao,
+            builder: (context, _) {
+              final bloqueado = _tentouIniciar && !_conexao.conectado;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (bloqueado)
+                    const SambaErro('Conecte o equipamento para iniciar'),
+                  SambaBotao(rotulo: 'Iniciar Medição', onPressed: _iniciar),
+                ],
+              );
+            },
           ),
         ],
       ),
-    );
+    );    
   }
+
 
   Widget _opcaoModalidade(String valor) {
     final selecionado = tipoExercicio == valor;
@@ -227,6 +121,92 @@ class _TesteViewState extends State<TesteView> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _CartaoConexao extends StatelessWidget {
+  const _CartaoConexao({required this.conexao, required this.onTap});
+
+  final ConexaoEquipamento conexao;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: conexao,
+      builder: (context, _) {
+        final conectado = conexao.conectado;
+        final procurando = conexao.estado == EstadoConexao.procurando;
+
+        final String subtitulo;
+        if (conectado) {
+          subtitulo = conexao.nomeDispositivo ?? 'Conectado';
+        } else if (procurando) {
+          subtitulo = 'Procurando equipamento...';
+        } else {
+          subtitulo = 'Toque para conectar';
+        }
+
+        return SambaCartao(
+          cor: conectado ? AppColors.azulEscuro : AppColors.cinzaClaro,
+          onTap: onTap,
+          child: Row(
+            children: [
+              CircleAvatar(
+                backgroundColor:
+                    conectado ? AppColors.verdeLimao : AppColors.cinza,
+                child: procurando
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: AppColors.branco,
+                        ),
+                      )
+                    : Icon(
+                        conectado
+                            ? Icons.bluetooth_connected
+                            : Icons.bluetooth_disabled,
+                        color:
+                            conectado ? AppColors.azulEscuro : AppColors.branco,
+                      ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Status do Dispositivo',
+                      style: TextStyle(
+                        color:
+                            conectado ? AppColors.cinzaClaro : AppColors.cinza,
+                        fontSize: 12,
+                      ),
+                    ),
+                    Text(
+                      subtitulo,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color:
+                            conectado ? AppColors.branco : AppColors.azulEscuro,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (conectado)
+                BarraBateria(nivel: conexao.bateriaNivel)
+              else
+                const Icon(Icons.power_settings_new, color: AppColors.cinza),
+            ],
+          ),
+        );
+      },
     );
   }
 }

@@ -1,108 +1,74 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../core/app_colors.dart';
+import '../core/widgets/samba_cartao.dart';
+import '../core/widgets/samba_pagina.dart';
 
 class PerfilView extends StatelessWidget {
-  const PerfilView({super.key});
+  const PerfilView({
+    super.key,
+    this.nome = 'Atleta SAMBA',
+    this.email = 'atleta@exemplo.com',
+    this.alturaCm = 178,
+    this.pesoKg = 75,
+  });
+
+  final String nome;
+  final String email;
+  final double alturaCm;
+  final double pesoKg;
+
+  String _numero(double valor) {
+    final texto = valor == valor.roundToDouble()
+        ? valor.round().toString()
+        : valor.toStringAsFixed(1).replaceAll('.', ',');
+    return texto;
+  }
+
+  void _sair(BuildContext context) {
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      child: Scaffold(
-        backgroundColor: AppColors.azulEscuro,
-        body: SafeArea(
-          bottom: false,
-          child: Column(
-            children: [
-              _buildTopo(context),
-              Expanded(child: _folhaBranca(context)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTopo(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-      child: Row(
+    return SambaPagina(
+      cabecalho: const SambaTopo(titulo: 'Perfil do Atleta'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back, color: AppColors.branco),
-            onPressed: () => Navigator.pop(context),
-          ),
-          const Expanded(
-            child: Text(
-              'Perfil do Atleta',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w500,
-                color: AppColors.branco,
-              ),
+          const Center(
+            child: CircleAvatar(
+              radius: 40,
+              backgroundColor: AppColors.azulEscuro,
+              child: Icon(Icons.person, size: 48, color: AppColors.verdeLimao),
             ),
           ),
-          const SizedBox(width: 48),
-        ],
-      ),
-    );
-  }
-
-  Widget _folhaBranca(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        color: AppColors.branco,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-      ),
-      padding: EdgeInsets.fromLTRB(
-        24,
-        28,
-        24,
-        24 + MediaQuery.of(context).padding.bottom,
-      ),
-      child: Column(
-        children: [
-          const CircleAvatar(
-            radius: 40,
-            backgroundColor: AppColors.azulEscuro,
-            child: Icon(Icons.person, size: 48, color: AppColors.verdeLimao),
-          ),
           const SizedBox(height: 12),
-          const Text(
-            'Atleta SAMBA',
-            style: TextStyle(
+          Text(
+            nome,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
               color: AppColors.azulEscuro,
               fontSize: 22,
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 28),
-          _buildCampoPerfil('E-mail', 'atleta@exemplo.com'),
+          _CampoPerfil(rotulo: 'E-mail', valor: email),
           const SizedBox(height: 12),
-          _buildCampoPerfil('Altura', '1.78 m'),
+          _CampoPerfil(rotulo: 'Altura', valor: '${_numero(alturaCm)} cm'),
           const SizedBox(height: 12),
-          _buildCampoPerfil('Massa Corporal', '75 kg'),
+          _CampoPerfil(rotulo: 'Massa Corporal', valor: '${_numero(pesoKg)} kg'),
           const Spacer(),
           SizedBox(
-            width: double.infinity,
             height: 52,
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.redAccent,
-                side: const BorderSide(color: Colors.redAccent, width: 1.5),
+                foregroundColor: AppColors.erro,
+                side: const BorderSide(color: AppColors.erro, width: 1.5),
                 shape: const StadiumBorder(),
               ),
-              onPressed: () {
-                Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  '/login',
-                  (route) => false,
-                );
-              },
+              onPressed: () => _sair(context),
               child: const Text(
                 'Sair da Conta',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
@@ -113,32 +79,36 @@ class PerfilView extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _buildCampoPerfil(String label, String valor) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.cinzaClaro,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.azulEscuro, width: 1.5),
-      ),
+class _CampoPerfil extends StatelessWidget {
+  const _CampoPerfil({required this.rotulo, required this.valor});
+
+  final String rotulo;
+  final String valor;
+
+  @override
+  Widget build(BuildContext context) {
+    return SambaCartao(
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            label,
+            rotulo,
             style: const TextStyle(
               color: AppColors.cinza,
               fontWeight: FontWeight.w500,
             ),
           ),
-          Text(
-            valor,
-            style: const TextStyle(
-              color: AppColors.azulEscuro,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
+          Flexible(
+            child: Text(
+              valor,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.azulEscuro,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
             ),
           ),
         ],

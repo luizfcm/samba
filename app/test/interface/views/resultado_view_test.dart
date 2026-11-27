@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:samba_app/funcionalidades/medicao/dominio/exercicio.dart';
 import 'package:samba_app/funcionalidades/medicao/dominio/sessao_medicao.dart';
+import 'package:samba_app/interface/core/widgets/samba_metrica.dart';
 import 'package:samba_app/interface/views/resultado_view.dart';
 import 'package:samba_app/nucleo/aquisicao/series_simuladas.dart';
 import 'package:samba_app/nucleo/modelos/amostra_forca.dart';
@@ -61,8 +62,21 @@ void main() {
         400,
       );
       expect(find.text('Força de Pico'), findsOneWidget);
-      expect(find.text('400 N'), findsOneWidget);
-      expect(find.text('5200 kgf/s'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text('Força de Pico'),
+            matching: find.byType(SambaMetrica),
+          ),
+          matching: find.text('400 N'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('RFD máxima'), findsOneWidget);
+      expect(find.text('RFD máxima relativa'), findsOneWidget);
+      expect(find.text('Força sustentada'), findsOneWidget);
+      expect(find.text('Variabilidade'), findsOneWidget);
+      expect(find.text('5200 kgf/s'), findsNothing);
     });
 
     testWidgets('mostra a melhor altura do salto em cm', (tester) async {
@@ -73,6 +87,8 @@ void main() {
 
       // h = 9,81 × 0,4² / 8 = 0,1962 m.
       expect(find.text('19,6 cm'), findsOneWidget);
+      expect(find.text('Índice de fadiga'), findsOneWidget);
+      expect(find.byType(SambaMetrica), findsAtLeastNWidgets(4));
     });
   });
 }
