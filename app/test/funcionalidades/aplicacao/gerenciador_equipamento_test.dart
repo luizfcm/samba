@@ -9,7 +9,7 @@ import 'package:samba_app/nucleo/aquisicao/fonte_forca_ble.dart';
 import 'package:samba_app/nucleo/aquisicao/fonte_forca_simulada.dart';
 import 'package:samba_app/nucleo/ble/conexao_equipamento.dart';
 
-import '../../../nucleo/ble/pacotes_firmware.dart';
+import '../../nucleo/ble/pacotes_firmware.dart';
 
 class EquipamentoFalso implements EquipamentoEncontrado {
   @override
